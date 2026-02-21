@@ -5,6 +5,7 @@ import logging
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.data.base_provider import OHLCVPoint
 from app.data.asset_registry import split_asset_identifier
@@ -119,46 +120,45 @@ class DataManager:
         if not points:
             return
 
-        normalized_points = [
-            {
-                "timestamp": point["timestamp"] if isinstance(point["timestamp"], datetime) else datetime.fromisoformat(str(point["timestamp"])),
-                "open": point["open"],
-                "high": point["high"],
-                "low": point["low"],
-                "close": point["close"],
-                "volume": point["volume"],
-            }
-            for point in points
-        ]
-
-        incoming_timestamps = {point["timestamp"] for point in normalized_points}
-
-        with get_db_session() as session:
-            existing_timestamps = set(
-                session.execute(
-                    select(OHLCVCache.timestamp)
-                    .where(OHLCVCache.provider == provider)
-                    .where(OHLCVCache.asset == asset)
-                    .where(OHLCVCache.timeframe == timeframe)
-                    .where(OHLCVCache.timestamp.in_(incoming_timestamps))
-                ).scalars()
+        now = datetime.utcnow()
+        rows: list[dict[str, object]] = []
+        for point in points:
+            timestamp_value = point["timestamp"]
+            timestamp = timestamp_value if isinstance(timestamp_value, datetime) else datetime.fromisoformat(str(timestamp_value))
+            fetched_at_value = point.get("fetched_at") if isinstance(point, dict) else getattr(point, "fetched_at", None)
+            fetched_at = (
+                fetched_at_value
+                if isinstance(fetched_at_value, datetime)
+                else datetime.fromisoformat(str(fetched_at_value))
+                if fetched_at_value
+                else now
+            )
+            rows.append(
+                {
+                    "provider": provider,
+                    "asset": asset,
+                    "timeframe": timeframe,
+                    "timestamp": timestamp,
+                    "open": point["open"],
+                    "high": point["high"],
+                    "low": point["low"],
+                    "close": point["close"],
+                    "volume": point["volume"],
+                    "fetched_at": fetched_at,
+                }
             )
 
-            objects = [
-                OHLCVCache(
-                    provider=provider,
-                    asset=asset,
-                    timeframe=timeframe,
-                    timestamp=point["timestamp"],
-                    open=point["open"],
-                    high=point["high"],
-                    low=point["low"],
-                    close=point["close"],
-                    volume=point["volume"],
-                )
-                for point in normalized_points
-                if point["timestamp"] not in existing_timestamps
-            ]
+        if not rows:
+            return
 
-            if objects:
-                session.bulk_save_objects(objects)
+        # SQLite defaults to a 999 variable limit per statement; 90 rows keeps inserts safely below it.
+        batch_size = 90
+
+        with get_db_session() as session:
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i : i + batch_size]
+                stmt = sqlite_insert(OHLCVCache).values(batch)
+                stmt = stmt.on_conflict_do_nothing(
+                    index_elements=["provider", "asset", "timeframe", "timestamp"]
+                )
+                session.execute(stmt)
