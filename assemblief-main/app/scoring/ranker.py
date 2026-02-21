@@ -38,6 +38,18 @@ class SignalRanker:
             if isinstance(bt, Exception):
                 continue
 
+        signal_backtests = await asyncio.gather(
+            *[
+                self.backtester.run(asset=asset, timeframe=timeframe, signal_name=signal)
+                for signal in self.signal_ids
+            ],
+            return_exceptions=True,
+        )
+
+        for signal, bt in zip(self.signal_ids, signal_backtests):
+            if isinstance(bt, Exception):
+                continue
+
             metrics = bt["metrics"]
             oos = bt["out_of_sample_metrics"]
             robust = bt["robustness"]
