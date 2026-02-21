@@ -154,9 +154,13 @@ def _classify(asset: dict, spot: dict | None, now: float) -> dict:
 
     if spot is None:
         if cached and (now - cached["fetched_at"]) < 600:
+            alert = f"⚠️ Fetch failed for {asset['name']} — showing cached value"
+            cached["status"] = "STALE"
+            cached["alert"] = alert
+            cached["source"] = "Cached (upstream error)"
             return _record(
                 cached["price"], cached["exchange_ts"], "STALE",
-                f"⚠️ Fetch failed for {asset['name']} — showing cached value",
+                alert,
                 "Cached (upstream error)",
             )
         return _record(
@@ -170,9 +174,13 @@ def _classify(asset: dict, spot: dict | None, now: float) -> dict:
     if not (asset["smin"] <= p <= asset["smax"]):
         logger.warning("Sanity fail %s: %.6f (range %.4f–%.4f)", aid, p, asset["smin"], asset["smax"])
         if cached:
+            alert = f"⚠️ Received implausible price ${p:,.4f} for {asset['name']} — reverting to cached"
+            cached["status"] = "ANOMALY"
+            cached["alert"] = alert
+            cached["source"] = "Cached (sanity check failed)"
             return _record(
                 cached["price"], cached["exchange_ts"], "ANOMALY",
-                f"⚠️ Received implausible price ${p:,.4f} for {asset['name']} — reverting to cached",
+                alert,
                 "Cached (sanity check failed)",
             )
         return _record(None, None, "ERROR", f"🚨 Implausible price for {asset['name']}: {p}")
@@ -182,9 +190,13 @@ def _classify(asset: dict, spot: dict | None, now: float) -> dict:
         pct = abs((p - cached["price"]) / cached["price"]) * 100
         if pct > ANOMALY_PCT:
             logger.warning("Anomaly %s: %.1f%% move %.4f→%.4f", aid, pct, cached["price"], p)
+            alert = f"⚠️ {asset['name']} moved {pct:.0f}% in one poll (${cached['price']:,.4f}→${p:,.4f}) — holding cache pending confirmation"
+            cached["status"] = "ANOMALY"
+            cached["alert"] = alert
+            cached["source"] = "Cached (anomaly detected)"
             return _record(
                 cached["price"], cached["exchange_ts"], "ANOMALY",
-                f"⚠️ {asset['name']} moved {pct:.0f}% in one poll (${cached['price']:,.4f}→${p:,.4f}) — holding cache pending confirmation",
+                alert,
                 "Cached (anomaly detected)",
             )
 
@@ -201,6 +213,9 @@ def _classify(asset: dict, spot: dict | None, now: float) -> dict:
         "price":        p,
         "exchange_ts":  spot["exchange_ts"],
         "exchange_raw": spot["exchange_raw"],
+        "status":       status,
+        "alert":        alert,
+        "source":       asset["src"],
         "fetched_at":   now,
     }
 
@@ -234,11 +249,11 @@ def _from_cache_records(now: float) -> list[dict]:
                 "cat":         a["cat"],
                 "emoji":       a["emoji"],
                 "unit":        a["unit"],
-                "source":      a["src"],
+                "source":      c.get("source", a["src"]),
                 "live_price":  round(c["price"], 6),
                 "exchange_ts": c["exchange_ts"],
-                "status":      "LIVE",
-                "alert":       None,
+                "status":      c.get("status", "LIVE"),
+                "alert":       c.get("alert"),
                 "validated_at": datetime.now(UTC).isoformat(),
             })
         else:
