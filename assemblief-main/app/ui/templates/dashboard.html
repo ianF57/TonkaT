@@ -525,7 +525,7 @@ const S={
   assets:ASSET_META.map((a)=>({...a,price:0,liveBase:0,liveReady:false,ch:0,sl:Array(55).fill(0),rsi:0,macd:0,bbPos:0,sentiment:0,volat:0})),
   strats:STRATS.map((s,i)=>({...s,score:s.baseScore,conf:50,wr:50,pnl:0,trades:10,regime:'Loading…',liveAdj:false,eq:Array.from({length:30},(_,j)=>10000+(i*120)+(j*25))})),
   signals:[],
-  cat:'all',currentTab:'dashboard',selectedAssetId:'BTC',
+  cat:'all',autoModes:{},currentTab:'dashboard',selectedAssetId:'BTC',
 };
 function enriched(){return S.assets.map(a=>({...a,signal:mapSignalBadge(a.id)}));}
 function sorted(){return[...S.strats].sort((a,b)=>b.score-a.score);}
