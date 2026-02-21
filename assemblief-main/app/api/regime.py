@@ -19,7 +19,7 @@ async def get_regime(asset: str, timeframe: str = Query(default="1h")) -> dict[s
     """Detect current market regime with confidence and historical distribution."""
     try:
         ohlcv_response = await manager.get_ohlcv(asset=asset, timeframe=timeframe)
-        snapshot = classifier.classify(ohlcv_response["data"])
+        snapshot = classifier.classify(ohlcv_response["data"], asset=ohlcv_response["asset"], timeframe=timeframe)
         return {
             "asset": ohlcv_response["asset"],
             "timeframe": timeframe,

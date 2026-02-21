@@ -26,7 +26,7 @@ class SignalManager:
     async def generate_signals(self, asset: str, timeframe: str = "1h") -> dict[str, Any]:
         ohlcv_response = await self.data_manager.get_ohlcv(asset=asset, timeframe=timeframe)
         data = ohlcv_response["data"]
-        regime_snapshot = self.regime_classifier.classify(data)
+        regime_snapshot = self.regime_classifier.classify(data, asset=ohlcv_response["asset"], timeframe=timeframe)
 
         candidates: list[SignalCandidate] = []
         for strategy in self.strategies:

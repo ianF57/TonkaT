@@ -24,7 +24,19 @@ class SignalRanker:
         ranked: list[dict[str, Any]] = []
 
         base_data = await self.data_manager.get_ohlcv(asset=asset, timeframe=timeframe)
-        regime = self.regime_classifier.classify(base_data["data"]).current_regime
+        regime = self.regime_classifier.classify(base_data["data"], asset=base_data["asset"], timeframe=timeframe).current_regime
+
+        signal_backtests = await asyncio.gather(
+            *[
+                self.backtester.run(asset=asset, timeframe=timeframe, signal_name=signal)
+                for signal in self.signal_ids
+            ],
+            return_exceptions=True,
+        )
+
+        for signal, bt in zip(self.signal_ids, signal_backtests):
+            if isinstance(bt, Exception):
+                continue
 
         signal_backtests = await asyncio.gather(
             *[

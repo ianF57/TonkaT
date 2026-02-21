@@ -27,7 +27,7 @@ class HistoricalReplay:
         if len(historical) < 60:
             raise ValueError("Insufficient candles before selected date. Choose a later date.")
 
-        regime_snapshot = self.regime_classifier.classify(historical)
+        regime_snapshot = self.regime_classifier.classify(historical, asset=all_data_response["asset"], timeframe=timeframe)
         ranked = await self._rank_historical(asset=all_data_response["asset"], timeframe=timeframe, candles=historical, regime=regime_snapshot.current_regime)
         if not ranked:
             raise ValueError("No valid historical signals for selected replay date.")
