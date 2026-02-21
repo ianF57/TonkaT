@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 import httpx
@@ -14,6 +14,18 @@ from app.data.futures_provider import FuturesProvider
 from app.data.models import OHLCVCache
 
 logger = logging.getLogger(__name__)
+
+CACHE_TTL_MINUTES: dict[str, int] = {
+    "1m": 5,
+    "5m": 15,
+    "15m": 30,
+    "30m": 45,
+    "1h": 60,
+    "4h": 240,
+    "1d": 1440,
+    "1w": 10080,
+}
+DEFAULT_CACHE_TTL_MINUTES = 60
 
 
 class DataManager:
@@ -79,12 +91,16 @@ class DataManager:
         }
 
     def _load_cached(self, provider: str, asset: str, timeframe: str, limit: int) -> list[dict[str, object]]:
+        ttl_minutes = CACHE_TTL_MINUTES.get(timeframe, DEFAULT_CACHE_TTL_MINUTES)
+        fresh_cutoff = datetime.utcnow() - timedelta(minutes=ttl_minutes)
+
         with get_db_session() as session:
             stmt = (
                 select(OHLCVCache)
                 .where(OHLCVCache.provider == provider)
                 .where(OHLCVCache.asset == asset)
                 .where(OHLCVCache.timeframe == timeframe)
+                .where(OHLCVCache.fetched_at > fresh_cutoff)
                 .order_by(OHLCVCache.timestamp.asc())
             )
             rows = session.execute(stmt).scalars().all()
