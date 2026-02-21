@@ -14,6 +14,7 @@ class Settings:
     app_port: int = int(os.getenv("APP_PORT", "8000"))
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     db_path: Path = Path(os.getenv("DB_PATH", "app/data/assemblief.db"))
+    api_key: str = os.getenv("API_KEY", "")
 
     @property
     def database_url(self) -> str:

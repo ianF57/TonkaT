@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from app.backtesting.backtester import Backtester
@@ -23,17 +24,29 @@ class SignalRanker:
         ranked: list[dict[str, Any]] = []
 
         base_data = await self.data_manager.get_ohlcv(asset=asset, timeframe=timeframe)
-        regime = self.regime_classifier.classify(base_data["data"]).current_regime
+        regime = self.regime_classifier.classify(base_data["data"], asset=base_data["asset"], timeframe=timeframe).current_regime
 
-        for signal in self.signal_ids:
-            bt = await self.backtester.run(asset=asset, timeframe=timeframe, signal_name=signal)
+        signal_backtests = await asyncio.gather(
+            *[
+                self.backtester.run(asset=asset, timeframe=timeframe, signal_name=signal)
+                for signal in self.signal_ids
+            ],
+            return_exceptions=True,
+        )
+
+        for signal, bt in zip(self.signal_ids, signal_backtests):
+            if isinstance(bt, Exception):
+                continue
+
             metrics = bt["metrics"]
             oos = bt["out_of_sample_metrics"]
             robust = bt["robustness"]
 
             out_sample_perf = max(0.0, min(100.0, oos["cagr"] * 0.6 + oos["sharpe"] * 10.0))
-            cross_asset = await self._cross_asset_stability(signal, timeframe)
-            cross_time = await self._cross_time_stability(asset, signal)
+            cross_asset, cross_time = await asyncio.gather(
+                self._cross_asset_stability(signal, timeframe),
+                self._cross_time_stability(asset, signal),
+            )
             regime_align = self._regime_alignment_score(signal, regime)
             robustness = float(robust["sensitivity_score"])
             dd_control = max(0.0, 100.0 - float(metrics["max_drawdown"]))
@@ -73,13 +86,23 @@ class SignalRanker:
         }
 
     async def _cross_asset_stability(self, signal: str, timeframe: str) -> float:
+        backtests = await asyncio.gather(
+            *[
+                self.backtester.run(asset=asset, timeframe=timeframe, signal_name=signal)
+                for asset in self.cross_assets
+            ],
+            return_exceptions=True,
+        )
+
         scores: list[float] = []
-        for asset in self.cross_assets:
+        for bt in backtests:
+            if isinstance(bt, Exception):
+                continue
             try:
-                bt = await self.backtester.run(asset=asset, timeframe=timeframe, signal_name=signal)
                 scores.append(max(0.0, float(bt["out_of_sample_metrics"]["cagr"])))
             except Exception:
                 continue
+
         if not scores:
             return 0.0
         avg = sum(scores) / len(scores)
@@ -87,13 +110,23 @@ class SignalRanker:
         return max(0.0, min(100.0, avg * 2.0 + max(0.0, 25 - spread)))
 
     async def _cross_time_stability(self, asset: str, signal: str) -> float:
+        backtests = await asyncio.gather(
+            *[
+                self.backtester.run(asset=asset, timeframe=timeframe, signal_name=signal)
+                for timeframe in self.cross_times
+            ],
+            return_exceptions=True,
+        )
+
         scores: list[float] = []
-        for timeframe in self.cross_times:
+        for bt in backtests:
+            if isinstance(bt, Exception):
+                continue
             try:
-                bt = await self.backtester.run(asset=asset, timeframe=timeframe, signal_name=signal)
                 scores.append(float(bt["out_of_sample_metrics"]["sharpe"]))
             except Exception:
                 continue
+
         if not scores:
             return 0.0
         avg = sum(scores) / len(scores)
