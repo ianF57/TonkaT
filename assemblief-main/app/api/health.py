@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, UTC
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.api.auth import require_api_key
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_api_key)])
 
 
 @router.get("/health")
