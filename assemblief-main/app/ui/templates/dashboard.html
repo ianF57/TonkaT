@@ -57,8 +57,6 @@ main{padding:20px 24px;max-width:1400px;margin:0 auto}
 .strat-card{position:relative;overflow:hidden}
 .strat-stats{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px}
 .strat-stat{text-align:center;background:white;border:1.5px solid #e8e0ff;border-radius:12px;padding:8px 6px}
-.toggle-track{width:46px;height:26px;border-radius:13px;cursor:pointer;position:relative;transition:background .3s;flex-shrink:0}
-.toggle-knob{position:absolute;top:3px;width:20px;height:20px;background:white;border-radius:50%;transition:left .3s;box-shadow:0 2px 6px rgba(0,0,0,.2)}
 .sigs-layout{display:grid;grid-template-columns:2fr 1fr;gap:20px}
 .sig-scroll{display:flex;flex-direction:column;max-height:600px;overflow-y:auto}
 .right-col{display:flex;flex-direction:column;gap:18px}
@@ -296,7 +294,6 @@ const SM={
 const CORRS=[['BTC ↔ ETH','92%',1],['BTC ↔ SOL','84%',1],['AAPL ↔ MSFT','78%',1],['BTC ↔ GOLD','34%',1],['USD/JPY ↔ OIL','-41%',0],['NVDA ↔ NDX','88%',1],['GOLD ↔ SPX','-18%',0]];
 const MEDALS=['🥇','🥈','🥉'];
 
-function sr(s){const x=Math.sin(s*9301+49297)*233280;return x-Math.floor(x)}
 function fmtP(p,id){
   if(p==null||p===0)return'—';
   if(['EURUSD','GBPUSD','AUDUSD'].includes(id))return p.toFixed(4);
@@ -476,44 +473,61 @@ async function valFetch(){
 }
 function valRunNow(){valLog('Manual refresh','info');valRenderLoading();valFetch();}
 
-/* ── APP STATE (no static prices) ── */
-function mkSparkline(base,vol){if(!base||base===0)return Array(55).fill(0);let p=base;return Array.from({length:55},(_,i)=>{p*=1+(sr(i*.7+base*.001)-.5)*vol*1.8;return p;});}
-function mkSignal(seed){
-  const a=ASSET_META[Math.floor(sr(seed)*ASSET_META.length)];
-  const vd=valData[a.id];const price=vd?vd.price:null;
-  const ind=INDS[Math.floor(sr(seed+.3)*INDS.length)];
-  let sBias=0;if(vd&&vd.change){sBias=vd.change>1?1:vd.change<-1?-1:0;}
-  const sigs=['STRONG BUY','BUY','NEUTRAL','SELL','STRONG SELL'];
-  let si=Math.max(0,Math.min(4,Math.floor(sr(seed+.7)*sigs.length)-sBias));
-  const sig=sigs[si];const conf=Math.round(55+sr(seed+.5)*40);const buy=sig.includes('BUY');
-  const pn=price?` (live: ${fmtPC(price,a.id)})`:'';
-  const WHY={
-    'RSI':buy?`RSI ${Math.round(20+sr(seed)*15)} — oversold${pn}`:(`RSI ${Math.round(70+sr(seed)*15)} — overbought${pn}`),
-    'MACD':buy?`MACD crossed above signal on ${a.id}. Bullish confirmed.`:`MACD bearish cross. Histogram negative.`,
-    'Bollinger Bands':buy?`Lower Bollinger Band hit${pn}. Mean-reverts 77%.`:`Upper Band pierced — potential reversal.`,
-    'MA Cross':buy?`20 EMA crossed above 50 SMA. Golden cross.`:`Death cross: 20 EMA below 50 SMA.`,
-    'Volume Spike':`Volume ${Math.round(200+sr(seed+.2)*300)}% above average${pn}. Institutional activity.`,
-    'Fibonacci':buy?`0.618 Fib support bounce${pn}.`:`0.786 Fib resistance failed.`,
-    'Sentiment':buy?`${Math.round(60+sr(seed+.4)*30)}% bullish sentiment.`:`${Math.round(60+sr(seed+.4)*30)}% bearish mentions in 4h.`,
-  };
-  return {seed,assetId:a.id,assetName:a.name,ae:a.e,indicator:ind,signal:sig,confidence:conf,why:WHY[ind]||'Multi-indicator confluence.',time:new Date(Date.now()-Math.floor(sr(seed+.9)*600000)).toLocaleTimeString(),isLiveBacked:!!vd};
+/* ── APP STATE (backend-driven signal/regime data) ── */
+function mkSparkline(base){if(!base||base===0)return Array(55).fill(0);return Array(55).fill(base);}
+const SIGNAL_BY_ASSET={};
+const REGIME_BY_ASSET={};
+
+function toApiAsset(meta){
+  if(meta.cat==='crypto')return `crypto:${meta.id}USDT`;
+  if(meta.cat==='forex')return `forex:${meta.id}`;
+  if(meta.cat==='commodities'){
+    const m={GOLD:'GC=F',SILVER:'SI=F',OIL:'CL=F',NATGAS:'NG=F'};
+    return m[meta.id]?`futures:${m[meta.id]}`:null;
+  }
+  return null;
 }
-function computeSig(a){
-  let s=0;
-  if(a.rsi<28)s+=3;else if(a.rsi<38)s+=1;else if(a.rsi>72)s-=3;else if(a.rsi>62)s-=1;
-  if(a.macd>.4)s++;else if(a.macd<-.4)s--;
-  if(a.bbPos<.18)s++;else if(a.bbPos>.82)s--;
-  if(a.sentiment>65)s++;else if(a.sentiment<30)s--;
-  const vd=valData[a.id];if(vd&&vd.change){s+=vd.change>1?1:vd.change<-1?-1:0;}
-  if(s>=4)return'STRONG BUY';if(s>=1)return'BUY';if(s<=-4)return'STRONG SELL';if(s<=-1)return'SELL';return'NEUTRAL';
+
+async function fetchAssetIntel(assetId){
+  const meta=ASSET_META.find(a=>a.id===assetId);if(!meta)return;
+  const apiAsset=toApiAsset(meta);if(!apiAsset)return;
+  try{
+    const [sigRes,regRes]=await Promise.all([
+      fetch(`/api/signals/${encodeURIComponent(apiAsset)}?timeframe=1h`),
+      fetch(`/api/regime/${encodeURIComponent(apiAsset)}?timeframe=1h`),
+    ]);
+    if(sigRes.ok){
+      const data=await sigRes.json();
+      SIGNAL_BY_ASSET[assetId]=data;
+      const primary=data.signals&&data.signals.length?data.signals[0]:null;
+      if(primary){
+        const md=primary.metadata||{};
+        S.assets=S.assets.map(a=>a.id!==assetId?a:{...a,rsi:md.z_score!=null?Math.max(0,Math.min(100,50+(Number(md.z_score)*10))):a.rsi,macd:md.momentum!=null?Number(md.momentum):a.macd,bbPos:md.slow_ma&&md.fast_ma?Math.max(0,Math.min(1,Number(md.fast_ma)/Number(md.slow_ma))):a.bbPos,sentiment:Number(primary.performance_score||0)});
+      }
+    }
+    if(regRes.ok){const data=await regRes.json();REGIME_BY_ASSET[assetId]=data;}
+  }catch(_err){/* non-fatal for UI */}
 }
+
+function getPrimarySignal(assetId){
+  const payload=SIGNAL_BY_ASSET[assetId];
+  return payload&&payload.signals&&payload.signals.length?payload.signals[0]:null;
+}
+
+function mapSignalBadge(assetId){
+  const s=getPrimarySignal(assetId);
+  if(!s)return 'NEUTRAL';
+  if(s.direction==='long')return s.performance_score>=75?'STRONG BUY':'BUY';
+  return s.performance_score>=75?'STRONG SELL':'SELL';
+}
+
 const S={
-  assets:ASSET_META.map((a,i)=>({...a,price:0,liveBase:0,liveReady:false,ch:0,sl:Array(55).fill(0),rsi:Math.round(20+sr(i*13+3)*65),macd:(sr(i*11+4)-.5)*2.5,bbPos:sr(i*19+5),sentiment:Math.round(15+sr(i*29+7)*75),volat:1+sr(i*31+8)*5})),
-  strats:STRATS.map((s,i)=>({...s,score:s.baseScore,conf:Math.round(44+sr(i*41+10)*52),wr:Math.round(40+sr(i*43+11)*48),pnl:(sr(i*47+12)-.38)*14,trades:Math.round(3+sr(i*53+13)*28),regime:'Loading…',liveAdj:false,eq:Array.from({length:30},(_,j)=>10000*(.9+sr(i*53+j+14)*.4))})),
-  signals:Array.from({length:24},(_,i)=>mkSignal(i*.17+.01)),
-  cat:'all',autoModes:{},currentTab:'dashboard',
+  assets:ASSET_META.map((a)=>({...a,price:0,liveBase:0,liveReady:false,ch:0,sl:Array(55).fill(0),rsi:0,macd:0,bbPos:0,sentiment:0,volat:0})),
+  strats:STRATS.map((s,i)=>({...s,score:s.baseScore,conf:50,wr:50,pnl:0,trades:10,regime:'Loading…',liveAdj:false,eq:Array.from({length:30},(_,j)=>10000+(i*120)+(j*25))})),
+  signals:[],
+  cat:'all',currentTab:'dashboard',selectedAssetId:'BTC',
 };
-function enriched(){return S.assets.map(a=>({...a,signal:computeSig(a)}));}
+function enriched(){return S.assets.map(a=>({...a,signal:mapSignalBadge(a.id)}));}
 function sorted(){return[...S.strats].sort((a,b)=>b.score-a.score);}
 function opps(){const score=a=>(a.signal==='STRONG BUY'?10:5)+a.sentiment*.03+(a.rsi<35?5:0);return enriched().filter(a=>a.liveReady&&(a.signal==='STRONG BUY'||a.signal==='BUY')).sort((a,b)=>score(b)-score(a)).slice(0,3);}
 
@@ -528,10 +542,12 @@ function switchTab(id){
 function renderHeader(){
   const E=enriched().filter(a=>a.liveReady);
   const bull=E.filter(a=>a.signal.includes('BUY')).length,bear=E.filter(a=>a.signal.includes('SELL')).length;
+  const selectedRegime=REGIME_BY_ASSET[S.selectedAssetId];
+  const regimeText=selectedRegime?`${selectedRegime.current_regime} (${selectedRegime.confidence_score}%)`:'Loading…';
   const mood=!valLiveReady?'🟡 Loading':bull>bear+5?'🟢 Bullish':bear>bull+5?'🔴 Bearish':'🟡 Mixed';
   document.getElementById('hdr-time').textContent='🕐 '+new Date().toLocaleTimeString();
   document.getElementById('hdr-mood').textContent='Market: '+mood;
-  document.getElementById('hdr-count').textContent=valLiveReady?`🟢 ${bull} / 🔴 ${bear} / ⚪ ${S.assets.length-bull-bear}`:'⏳ Awaiting live data…';
+  document.getElementById('hdr-count').textContent=`${S.selectedAssetId} regime: ${regimeText}`;
 }
 
 function renderDashboard(){
@@ -563,11 +579,16 @@ function renderDashboard(){
 }
 function renderSignalFeed(elId,limit){
   const el=document.getElementById(elId);el.innerHTML='';
-  S.signals.slice(0,limit).forEach(sig=>{
-    const m=SM[sig.signal]||SM.NEUTRAL;const div=document.createElement('div');div.className='sig-item';div.style.cssText=`background:${m.bg};border-color:${m.bd}`;
-    div.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">${sig.ae}</span><span style="font-family:'Fredoka One',cursive;font-size:13px">${sig.assetId}</span><span style="font-size:11px;color:#7c6aad;font-weight:600">${sig.indicator}</span>${sig.isLiveBacked?'<span class="verified-chip" style="font-size:8px">✓ LIVE</span>':''}</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${badge(sig.signal,true)}<span style="font-size:10px;color:#a890d3;font-weight:700">${sig.time}</span></div></div><div class="sig-why">💡 <strong>Why:</strong> ${sig.why}<br><span style="color:#845ef7;font-weight:700">Confidence: ${sig.confidence}%</span></div>`;
+  const selected=S.selectedAssetId;
+  const payload=SIGNAL_BY_ASSET[selected];
+  const sigs=(payload&&payload.signals)?payload.signals.slice(0,limit):[];
+  sigs.forEach(sig=>{
+    const mapped=sig.direction==='long'?(sig.performance_score>=75?'STRONG BUY':'BUY'):(sig.performance_score>=75?'STRONG SELL':'SELL');
+    const m=SM[mapped]||SM.NEUTRAL;const div=document.createElement('div');div.className='sig-item';div.style.cssText=`background:${m.bg};border-color:${m.bd}`;
+    div.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">${ASSET_META.find(a=>a.id===selected)?.e||'📈'}</span><span style="font-family:'Fredoka One',cursive;font-size:13px">${selected}</span><span style="font-size:11px;color:#7c6aad;font-weight:600">${sig.strategy_label} ${sig.version}</span></div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0">${badge(mapped,true)}<span style="font-size:10px;color:#a890d3;font-weight:700">${Math.round(sig.performance_score)}%</span></div></div><div class="sig-why">💡 <strong>Direction:</strong> ${sig.direction}<br><strong>Entry:</strong> ${sig.entry_rule}<br><strong>Exit:</strong> ${sig.exit_rule}<br><span style="color:#845ef7;font-weight:700">Confidence: ${Math.round(sig.performance_score)}%</span><br><span style="font-size:10px">Parameters: ${JSON.stringify(sig.parameters)}</span><br><span style="font-size:10px">Metadata: ${JSON.stringify(sig.metadata)}</span></div>`;
     div.onclick=()=>div.querySelector('.sig-why').classList.toggle('open');el.appendChild(div);
   });
+  if(!sigs.length)el.innerHTML='<div style="color:#a890d3;text-align:center;padding:16px">No backend signals available for selected asset.</div>';
 }
 function renderAssets(){
   const cbEl=document.getElementById('cat-btns');
@@ -576,30 +597,38 @@ function renderAssets(){
   const E=enriched();const rows=S.cat==='all'?E:E.filter(a=>a.cat===S.cat);
   const tbl=document.getElementById('asset-tbl');tbl.innerHTML='';
   rows.forEach(a=>{
+    const sig=getPrimarySignal(a.id);const regime=REGIME_BY_ASSET[a.id];
     const div=document.createElement('div');div.className='asset-row';const vd=valData[a.id];
     const priceDisp=a.liveReady?`<span style="font-family:'Fredoka One',cursive;font-size:14px;color:#16a34a">${fmtPC(a.price,a.id)}</span>${vd?(vd.status==='LIVE'?'<span class="verified-chip">✓ LIVE</span>':vd.status==='STALE'?'<span class="verified-chip stale-chip">⏰</span>':'<span class="verified-chip error-chip">⚠</span>'):''}`:`<span class="verified-chip pending-chip">⏳ Fetching…</span>`;
-    const ts=vd?.exchange_ts?`<div style="font-size:8px;color:#c4b5fd;margin-top:1px">${new Date(vd.exchange_ts).toLocaleTimeString()}</div>`:'';;
-    div.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">${a.e}</span><div><div style="font-family:'Fredoka One',cursive;font-size:14px">${a.id}</div><div style="font-size:10px;color:#a890d3;font-weight:600">${a.name}</div></div></div><div>${priceDisp}${ts}</div><div style="font-weight:800;font-size:13px;color:${a.ch>=0?'#16a34a':'#dc2626'}">${a.liveReady&&a.ch!==0?pct(a.ch):'—'}</div><div style="font-family:'Fredoka One',cursive;font-size:14px;color:${a.rsi<30?'#16a34a':a.rsi>70?'#dc2626':'#ca8a04'}">${Math.round(a.rsi)}</div><div><div style="font-size:12px;font-weight:700;color:${a.sentiment>60?'#16a34a':a.sentiment<35?'#dc2626':'#ca8a04'}">${a.sentiment}%</div>${cbar(a.sentiment,a.sentiment>60?'#22c55e':a.sentiment<35?'#ef4444':'#eab308')}</div><div style="font-size:12px;font-weight:700;color:#845ef7">${a.volat.toFixed(1)}%</div>${badge(a.signal,true)}`;
+    const ts=vd?.exchange_ts?`<div style="font-size:8px;color:#c4b5fd;margin-top:1px">${new Date(vd.exchange_ts).toLocaleTimeString()}</div>`:'';
+    div.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">${a.e}</span><div><div style="font-family:'Fredoka One',cursive;font-size:14px">${a.id}</div><div style="font-size:10px;color:#a890d3;font-weight:600">${a.name}</div></div></div><div>${priceDisp}${ts}</div><div style="font-weight:800;font-size:13px;color:${a.ch>=0?'#16a34a':'#dc2626'}">${a.liveReady&&a.ch!==0?pct(a.ch):'—'}</div><div style="font-family:'Fredoka One',cursive;font-size:12px;color:#6d4dc0">${sig?sig.direction.toUpperCase():'—'}</div><div><div style="font-size:12px;font-weight:700;color:#845ef7">${sig?Math.round(sig.performance_score):'—'}${sig?'%':''}</div>${cbar(sig?Math.round(sig.performance_score):0,'#845ef7')}</div><div style="font-size:12px;font-weight:700;color:#845ef7">${regime?regime.current_regime:'—'}</div>${badge(a.signal,true)}`;
+    div.onclick=()=>{S.selectedAssetId=a.id;fetchAssetIntel(a.id).finally(()=>render());};
     const canvas=mkCanvas('100%',36);div.appendChild(canvas);tbl.appendChild(div);requestAnimationFrame(()=>drawSpark(canvas,a.sl,a.ch>=0));
   });
 }
 function renderStrategies(){
   const el=document.getElementById('strat-grid');el.innerHTML='';
   sorted().forEach((s,i)=>{
-    const isAuto=S.autoModes[s.id];const topC=s.score>75?'linear-gradient(90deg,#22c55e,#16a34a)':s.score>55?'linear-gradient(90deg,#845ef7,#4d96ff)':'linear-gradient(90deg,#f59e0b,#ef4444)';
+    const topC=s.score>75?'linear-gradient(90deg,#22c55e,#16a34a)':s.score>55?'linear-gradient(90deg,#845ef7,#4d96ff)':'linear-gradient(90deg,#f59e0b,#ef4444)';
     const div=document.createElement('div');div.className='card strat-card';
-    div.innerHTML=`<div style="position:absolute;top:0;left:0;right:0;height:4px;background:${topC}"></div><div style="position:absolute;top:14px;right:14px;font-family:'Fredoka One',cursive;font-size:22px">${i<3?MEDALS[i]:'#'+(i+1)}</div><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;margin-top:6px"><div style="font-size:28px">${s.e}</div><div><div style="font-family:'Fredoka One',cursive;font-size:18px;color:#3d2069">${s.name}</div><div style="font-size:11px;color:#a890d3;font-weight:600">⏱ ${s.tf} · Risk: ${s.risk}</div></div></div><div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:12px;background:${s.liveAdj?'#f0fdf4':'#f3eeff'};border:1.5px solid ${s.liveAdj?'#86efac':'#ddd6ff'};margin-bottom:12px;font-size:11px;font-weight:700;color:${s.liveAdj?'#16a34a':'#7c6aad'}">${s.liveAdj?`🛡️ Live-Adjusted · Market Regime: ${s.regime}`:'⏳ Awaiting live market data for score adjustment…'}</div><div style="font-size:12px;color:#5b3fa0;font-weight:600;margin-bottom:14px;line-height:1.5;background:#f8f5ff;border-radius:10px;padding:8px 12px">📚 <strong>How it works:</strong> ${s.desc}</div><div class="strat-stats"><div class="strat-stat"><div class="stat-lbl">Live Score</div><div style="font-family:'Fredoka One',cursive;font-size:15px;color:${s.score>75?'#16a34a':s.score>55?'#845ef7':'#ca8a04'}">${s.score}/100</div></div><div class="strat-stat"><div class="stat-lbl">Confidence</div><div style="font-family:'Fredoka One',cursive;font-size:15px;color:#4d96ff">${s.conf}%</div></div><div class="strat-stat"><div class="stat-lbl">Win Rate</div><div style="font-family:'Fredoka One',cursive;font-size:15px;color:${s.wr>55?'#16a34a':'#dc2626'}">${s.wr}%</div></div><div class="strat-stat"><div class="stat-lbl">24h PnL</div><div style="font-family:'Fredoka One',cursive;font-size:15px;color:${s.pnl>=0?'#16a34a':'#dc2626'}">${pct(s.pnl)}</div></div></div><div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#a890d3;margin-bottom:4px">📈 30-Day Equity Curve</div></div><div style="font-size:11px;color:#7c6aad;font-weight:600;margin-bottom:12px;padding:6px 10px;background:#f3eeff;border-radius:10px">🔬 Backtest: ${s.trades*30} trades · Max DD ${(5+i*2.1).toFixed(1)}% · Sharpe ${(0.8+s.score*.015).toFixed(2)}</div><div style="display:flex;align-items:center;justify-content:space-between;background:${isAuto?'#dcfce7':'#f3eeff'};border:2px solid ${isAuto?'#86efac':'#ddd6ff'};border-radius:14px;padding:8px 14px"><div><div style="font-size:12px;font-weight:800;color:${isAuto?'#16a34a':'#845ef7'}">${isAuto?'🤖 AUTO EXECUTION':'👤 MANUAL MODE'}</div><div style="font-size:10px;color:#a890d3;font-weight:600">${isAuto?'Signals auto-execute (demo)':'Click signals to act manually'}</div></div><div class="toggle-track" style="background:${isAuto?'#22c55e':'#c4b5fd'}" data-sid="${s.id}"><div class="toggle-knob" style="left:${isAuto?'22':'3'}px"></div></div></div>`;
+    div.innerHTML=`<div style="position:absolute;top:0;left:0;right:0;height:4px;background:${topC}"></div><div style="position:absolute;top:14px;right:14px;font-family:'Fredoka One',cursive;font-size:22px">${i<3?MEDALS[i]:'#'+(i+1)}</div><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;margin-top:6px"><div style="font-size:28px">${s.e}</div><div><div style="font-family:'Fredoka One',cursive;font-size:18px;color:#3d2069">${s.name}</div><div style="font-size:11px;color:#a890d3;font-weight:600">⏱ ${s.tf} · Risk: ${s.risk}</div></div></div><div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:12px;background:${s.liveAdj?'#f0fdf4':'#f3eeff'};border:1.5px solid ${s.liveAdj?'#86efac':'#ddd6ff'};margin-bottom:12px;font-size:11px;font-weight:700;color:${s.liveAdj?'#16a34a':'#7c6aad'}">${s.liveAdj?`🛡️ Live-Adjusted · Market Regime: ${s.regime}`:'⏳ Awaiting live market data for score adjustment…'}</div><div style="font-size:12px;color:#5b3fa0;font-weight:600;margin-bottom:14px;line-height:1.5;background:#f8f5ff;border-radius:10px;padding:8px 12px">📚 <strong>How it works:</strong> ${s.desc}</div><div class="strat-stats"><div class="strat-stat"><div class="stat-lbl">Live Score</div><div style="font-family:'Fredoka One',cursive;font-size:15px;color:${s.score>75?'#16a34a':s.score>55?'#845ef7':'#ca8a04'}">${s.score}/100</div></div><div class="strat-stat"><div class="stat-lbl">Confidence</div><div style="font-family:'Fredoka One',cursive;font-size:15px;color:#4d96ff">${s.conf}%</div></div><div class="strat-stat"><div class="stat-lbl">Win Rate</div><div style="font-family:'Fredoka One',cursive;font-size:15px;color:${s.wr>55?'#16a34a':'#dc2626'}">${s.wr}%</div></div><div class="strat-stat"><div class="stat-lbl">24h PnL</div><div style="font-family:'Fredoka One',cursive;font-size:15px;color:${s.pnl>=0?'#16a34a':'#dc2626'}">${pct(s.pnl)}</div></div></div><div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#a890d3;margin-bottom:4px">📈 30-Day Equity Curve</div></div><div style="font-size:11px;color:#7c6aad;font-weight:600;margin-bottom:12px;padding:6px 10px;background:#f3eeff;border-radius:10px">🔬 Backtest: ${s.trades*30} trades · Max DD ${(5+i*2.1).toFixed(1)}% · Sharpe ${(0.8+s.score*.015).toFixed(2)}</div><div style="display:flex;align-items:center;justify-content:space-between;background:#fff7ed;border:2px solid #fdba74;border-radius:14px;padding:8px 14px" title="Simulation only. No broker connection and no real order execution."><div><div style="font-size:12px;font-weight:800;color:#9a3412">🧪 DEMO MODE — no real orders</div><div style="font-size:10px;color:#a890d3;font-weight:600">Signals shown for analysis only. Execution is not connected to any broker.</div></div></div>`;
     const canvas=mkCanvas('100%',60);div.querySelectorAll('div')[10].appendChild(canvas);
-    div.querySelector('.toggle-track').onclick=()=>{S.autoModes[s.id]=!S.autoModes[s.id];renderStrategies();};
     el.appendChild(div);requestAnimationFrame(()=>drawEq(canvas,s.eq));
   });
 }
 function renderSignals(){
-  renderSignalFeed('feed-full',30);const E=enriched();
-  document.getElementById('ind-snap').innerHTML=E.filter(a=>a.liveReady).slice(0,6).map(a=>`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div style="font-family:'Fredoka One',cursive;font-size:13px">${a.e} ${a.id} <span style="font-size:9px;color:#16a34a">${valData[a.id]?'✓ LIVE':''}</span></div>${badge(a.signal,true)}</div><div class="ind-grid"><div class="ind-cell"><div style="font-size:9px;font-weight:800;color:#a890d3">RSI</div><div style="font-size:12px;font-weight:800">${a.rsi<30?'🟢':a.rsi>70?'🔴':'🟡'} ${Math.round(a.rsi)}</div></div><div class="ind-cell"><div style="font-size:9px;font-weight:800;color:#a890d3">MACD</div><div style="font-size:12px;font-weight:800">${a.macd>0?'🟢':'🔴'} ${a.macd.toFixed(2)}</div></div><div class="ind-cell"><div style="font-size:9px;font-weight:800;color:#a890d3">Sent.</div><div style="font-size:12px;font-weight:800">${a.sentiment>60?'🟢':a.sentiment<35?'🔴':'🟡'} ${a.sentiment}%</div></div></div>${valData[a.id]?`<div style="font-size:9px;font-weight:700;color:#16a34a;margin-top:3px">Live: ${fmtPC(valData[a.id].price,a.id)} · ${valData[a.id].source}</div>`:''}</div>`).join('')||'<div style="color:#a890d3;text-align:center;padding:16px">⏳ Waiting for live prices…</div>';
-  const vols=E.filter(a=>a.volat>3&&a.liveReady).slice(0,6);
-  document.getElementById('vol-alerts').innerHTML=vols.length?vols.map(a=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1.5px dashed #e8e0ff"><span style="font-family:'Fredoka One',cursive;font-size:13px">${a.e} ${a.id}</span><div style="display:flex;gap:8px;align-items:center"><span style="font-size:11px;font-weight:800;color:#f59e0b">⚡ ${a.volat.toFixed(1)}%</span>${badge(a.signal,true)}</div></div>`).join(''):'<div style="color:#a890d3;font-weight:700;text-align:center;padding:16px;font-size:13px">😴 All quiet!</div>';
-  document.getElementById('sent-radar').innerHTML=[...E].filter(a=>a.liveReady).sort((a,b)=>b.sentiment-a.sentiment).slice(0,7).map(a=>`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;margin-bottom:2px"><span style="font-size:12px;font-weight:700">${a.e} ${a.id}</span><span style="font-size:12px;font-weight:800;color:${a.sentiment>60?'#16a34a':a.sentiment<35?'#dc2626':'#ca8a04'}">${a.sentiment}%</span></div>${cbar(a.sentiment,a.sentiment>60?'#22c55e':a.sentiment<35?'#ef4444':'#eab308')}</div>`).join('')||'<div style="color:#a890d3;text-align:center;padding:16px">⏳ Waiting for live prices…</div>';
+  renderSignalFeed('feed-full',30);
+  const selected=S.selectedAssetId;
+  const sig=getPrimarySignal(selected);
+  const regime=REGIME_BY_ASSET[selected];
+  const meta=ASSET_META.find(a=>a.id===selected);
+  const direction=sig?sig.direction.toUpperCase():'—';
+  const confidence=sig?Math.round(sig.performance_score):0;
+  const md=sig&&sig.metadata?sig.metadata:{};
+  const params=sig&&sig.parameters?sig.parameters:{};
+  document.getElementById('ind-snap').innerHTML=`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div style="font-family:'Fredoka One',cursive;font-size:13px">${meta?meta.e:''} ${selected}</div>${badge(mapSignalBadge(selected),true)}</div><div class="ind-grid"><div class="ind-cell"><div style="font-size:9px;font-weight:800;color:#a890d3">Direction</div><div style="font-size:12px;font-weight:800">${direction}</div></div><div class="ind-cell"><div style="font-size:9px;font-weight:800;color:#a890d3">Confidence</div><div style="font-size:12px;font-weight:800">${confidence}%</div></div><div class="ind-cell"><div style="font-size:9px;font-weight:800;color:#a890d3">Regime</div><div style="font-size:12px;font-weight:800">${regime?regime.current_regime:'—'}</div></div></div><div style="font-size:9px;font-weight:700;color:#5b3fa0;margin-top:4px">Metadata: ${Object.keys(md).length?JSON.stringify(md):'—'}</div><div style="font-size:9px;font-weight:700;color:#5b3fa0;margin-top:2px">Parameters: ${Object.keys(params).length?JSON.stringify(params):'—'}</div></div>`;
+  document.getElementById('vol-alerts').innerHTML=`<div style="padding:7px 0">Current regime confidence: <strong>${regime?regime.confidence_score:'—'}%</strong></div>`;
+  document.getElementById('sent-radar').innerHTML=`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;margin-bottom:2px"><span style="font-size:12px;font-weight:700">${selected} Signal Score</span><span style="font-size:12px;font-weight:800;color:#845ef7">${confidence}%</span></div>${cbar(confidence,'#845ef7')}</div>`;
 }
 function render(){
   renderHeader();
@@ -612,22 +641,15 @@ function render(){
 
 /* ── LIVE TICK — only drift assets already grounded by live data ── */
 function tick(){
-  S.assets=S.assets.map(a=>{
-    if(!a.liveReady)return a;
-    const base=a.liveBase||a.price;
-    const np=a.price*(1+(Math.random()-.499)*a.vol*.8);
-    const driftPct=Math.abs((np-base)/base);
-    const corrected=driftPct>0.02?(np*0.7+base*0.3):np;
-    return{...a,price:corrected,ch:Math.max(-25,Math.min(25,a.ch+(Math.random()-.5)*.2)),sl:[...a.sl.slice(1),corrected],rsi:Math.max(5,Math.min(95,a.rsi+(Math.random()-.5)*2)),macd:a.macd+(Math.random()-.5)*.08,bbPos:Math.max(.01,Math.min(.99,a.bbPos+(Math.random()-.5)*.04)),sentiment:Math.max(5,Math.min(95,a.sentiment+(Math.random()-.5)*3))};
-  });
-  if(Math.random()<.3&&valLiveReady)S.signals=[mkSignal(Date.now()*Math.random()),...S.signals.slice(0,29)];
   render();
 }
 
 /* ── BOOT ── */
 valRenderLoading();valUpdateFeedHealth('LOADING');render();
+fetchAssetIntel(S.selectedAssetId).finally(()=>render());
 valFetch();
 setInterval(()=>{valCheckStaleness();valFetch();},VAL_POLL_MS);
+setInterval(()=>{fetchAssetIntel(S.selectedAssetId).finally(()=>render());},60000);
 setInterval(tick,2000);
 setInterval(()=>{document.getElementById('hdr-time').textContent='🕐 '+new Date().toLocaleTimeString();},1000);
 </script>

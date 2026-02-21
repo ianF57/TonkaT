@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.auth import require_api_key
 
 from app.signals.signal_manager import SignalManager
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["signals"])
+router = APIRouter(prefix="/api", tags=["signals"], dependencies=[Depends(require_api_key)])
 signal_manager = SignalManager()
 
 
