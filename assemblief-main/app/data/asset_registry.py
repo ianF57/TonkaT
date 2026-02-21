@@ -3,7 +3,7 @@ from __future__ import annotations
 VALID_MARKET_PREFIXES: frozenset[str] = frozenset({"crypto", "forex", "futures"})
 
 VALID_ASSETS_BY_MARKET: dict[str, frozenset[str]] = {
-    "crypto": frozenset({"BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "MATICUSDT", "LINKUSDT"}),
+    "crypto": frozenset({"BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"}),
     "forex": frozenset({"EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF"}),
     "futures": frozenset({"GC", "SI", "CL", "NG", "ES", "NQ", "YM"}),
 }
