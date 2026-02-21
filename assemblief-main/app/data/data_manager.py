@@ -7,6 +7,7 @@ import httpx
 from sqlalchemy import select
 
 from app.data.base_provider import OHLCVPoint
+from app.data.asset_registry import split_asset_identifier
 from app.data.binance_provider import BinanceProvider
 from app.data.database import get_db_session
 from app.data.forex_provider import ForexProvider
@@ -39,19 +40,10 @@ class DataManager:
         }
 
     def _resolve_market(self, asset: str) -> tuple[str, str]:
-        if ":" in asset:
-            market, symbol = asset.split(":", 1)
-            market = market.lower()
-            if market in self.providers:
-                return market, symbol
-        symbol = asset.upper()
-        if symbol.endswith("USDT"):
-            return "crypto", symbol
-        if symbol.endswith("=F"):
-            return "futures", symbol[:-2]
-        if symbol.endswith("=X"):
-            return "forex", symbol[:-2]
-        raise ValueError("Asset must include market prefix (crypto:, forex:, futures:) or a known symbol suffix")
+        market, symbol = split_asset_identifier(asset)
+        if market not in self.providers:
+            raise ValueError(f"Unsupported market '{market}'")
+        return market, symbol
 
     async def get_ohlcv(self, asset: str, timeframe: str, limit: int = 300) -> dict[str, object]:
         market, symbol = self._resolve_market(asset)

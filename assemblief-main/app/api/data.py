@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.asset_validation import validate_asset_path
 from app.api.auth import require_api_key
 
 from app.data.data_manager import DataManager
@@ -16,7 +17,8 @@ manager = DataManager()
 async def get_market_data(asset: str, timeframe: str = Query(default="1h")) -> dict[str, object]:
     """Return unified OHLCV market data across supported asset classes."""
     try:
-        return await manager.get_ohlcv(asset=asset, timeframe=timeframe)
+        normalized_asset = validate_asset_path(asset)
+        return await manager.get_ohlcv(asset=normalized_asset, timeframe=timeframe)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
