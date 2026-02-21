@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import logging
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.data.base_provider import OHLCVPoint
 from app.data.binance_provider import BinanceProvider
@@ -126,24 +126,47 @@ class DataManager:
     def _store_points(self, provider: str, asset: str, timeframe: str, points: list[OHLCVPoint]) -> None:
         if not points:
             return
+
+        normalized_points = [
+            {
+                "timestamp": point["timestamp"] if isinstance(point["timestamp"], datetime) else datetime.fromisoformat(str(point["timestamp"])),
+                "open": point["open"],
+                "high": point["high"],
+                "low": point["low"],
+                "close": point["close"],
+                "volume": point["volume"],
+            }
+            for point in points
+        ]
+
+        incoming_timestamps = {point["timestamp"] for point in normalized_points}
+
         with get_db_session() as session:
-            session.execute(
-                delete(OHLCVCache)
-                .where(OHLCVCache.provider == provider)
-                .where(OHLCVCache.asset == asset)
-                .where(OHLCVCache.timeframe == timeframe)
+            existing_timestamps = set(
+                session.execute(
+                    select(OHLCVCache.timestamp)
+                    .where(OHLCVCache.provider == provider)
+                    .where(OHLCVCache.asset == asset)
+                    .where(OHLCVCache.timeframe == timeframe)
+                    .where(OHLCVCache.timestamp.in_(incoming_timestamps))
+                ).scalars()
             )
-            for point in points:
-                session.add(
-                    OHLCVCache(
-                        provider=provider,
-                        asset=asset,
-                        timeframe=timeframe,
-                        timestamp=point["timestamp"] if isinstance(point["timestamp"], datetime) else datetime.fromisoformat(str(point["timestamp"])),
-                        open=point["open"],
-                        high=point["high"],
-                        low=point["low"],
-                        close=point["close"],
-                        volume=point["volume"],
-                    )
+
+            objects = [
+                OHLCVCache(
+                    provider=provider,
+                    asset=asset,
+                    timeframe=timeframe,
+                    timestamp=point["timestamp"],
+                    open=point["open"],
+                    high=point["high"],
+                    low=point["low"],
+                    close=point["close"],
+                    volume=point["volume"],
                 )
+                for point in normalized_points
+                if point["timestamp"] not in existing_timestamps
+            ]
+
+            if objects:
+                session.bulk_save_objects(objects)
