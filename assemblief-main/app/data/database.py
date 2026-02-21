@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import declarative_base, sessionmaker
 
 from config import settings
 
@@ -32,9 +31,6 @@ def initialize_database() -> None:
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     import app.data.models  # noqa: F401
 
-def initialize_database() -> None:
-    """Create database artifacts and run a tiny health query."""
-    settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
