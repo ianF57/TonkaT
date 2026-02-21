@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.asset_validation import validate_asset_path
 from app.api.auth import require_api_key
 
 from app.signals.signal_manager import SignalManager
@@ -16,7 +17,8 @@ signal_manager = SignalManager()
 async def get_signals(asset: str, timeframe: str = Query(default="1h")) -> dict[str, object]:
     """Generate and rank strategy signal candidates for an asset/timeframe."""
     try:
-        return await signal_manager.generate_signals(asset=asset, timeframe=timeframe)
+        normalized_asset = validate_asset_path(asset)
+        return await signal_manager.generate_signals(asset=normalized_asset, timeframe=timeframe)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

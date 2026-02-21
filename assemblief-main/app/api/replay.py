@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.asset_validation import validate_asset_path
 from app.api.auth import require_api_key
 
 from app.backtesting.replay import HistoricalReplay
@@ -16,7 +17,8 @@ replay_engine = HistoricalReplay()
 async def replay_asset(asset: str, date: str = Query(..., description="Replay date YYYY-MM-DD"), timeframe: str = Query(default="1h")) -> dict[str, object]:
     """Replay historical context at a selected date."""
     try:
-        return await replay_engine.replay(asset=asset, timeframe=timeframe, replay_date=date)
+        normalized_asset = validate_asset_path(asset)
+        return await replay_engine.replay(asset=normalized_asset, timeframe=timeframe, replay_date=date)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.asset_validation import validate_asset_path
 from app.api.auth import require_api_key
 
 from app.data.data_manager import DataManager
@@ -18,7 +19,8 @@ classifier = RegimeClassifier()
 async def get_regime(asset: str, timeframe: str = Query(default="1h")) -> dict[str, object]:
     """Detect current market regime with confidence and historical distribution."""
     try:
-        ohlcv_response = await manager.get_ohlcv(asset=asset, timeframe=timeframe)
+        normalized_asset = validate_asset_path(asset)
+        ohlcv_response = await manager.get_ohlcv(asset=normalized_asset, timeframe=timeframe)
         snapshot = classifier.classify(ohlcv_response["data"], asset=ohlcv_response["asset"], timeframe=timeframe)
         return {
             "asset": ohlcv_response["asset"],

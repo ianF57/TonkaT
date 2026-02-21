@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.asset_validation import validate_asset_path
 from app.api.auth import require_api_key
 
 from app.backtesting.backtester import Backtester
@@ -16,7 +17,8 @@ backtester = Backtester()
 async def get_backtest(asset: str, signal: str = Query(default="trend_v1"), timeframe: str = Query(default="1h")) -> dict[str, object]:
     """Run backtest and robustness checks for a selected signal."""
     try:
-        return await backtester.run(asset=asset, timeframe=timeframe, signal_name=signal)
+        normalized_asset = validate_asset_path(asset)
+        return await backtester.run(asset=normalized_asset, timeframe=timeframe, signal_name=signal)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
