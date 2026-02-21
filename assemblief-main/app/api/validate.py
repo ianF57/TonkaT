@@ -24,10 +24,11 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from app.api.auth import require_api_key
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/validate", tags=["validation"])
+router = APIRouter(prefix="/api/validate", tags=["validation"], dependencies=[Depends(require_api_key)])
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Universal asset registry  (dashboard_id → Yahoo Finance symbol)

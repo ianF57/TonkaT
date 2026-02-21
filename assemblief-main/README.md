@@ -8,6 +8,7 @@ A local-first FastAPI application skeleton with SQLite initialization, modular p
 
 ```bash
 pip install -r requirements.txt
+export API_KEY="your-secure-token"
 python main.py
 ```
 
@@ -19,6 +20,12 @@ When started via `python main.py` the app will:
 4. Attempt to open your default browser at `http://127.0.0.1:8000/`
 
 ## Routes
+
+All API endpoints require a bearer token in the `Authorization` header:
+
+```http
+Authorization: Bearer <API_KEY>
+```
 
 - `/` – institutional style dashboard (Jinja2 template)
 - `/health` – JSON health status
@@ -81,3 +88,4 @@ Runtime config is managed through environment variables in `config.py`:
 - `APP_PORT`
 - `LOG_LEVEL`
 - `DB_PATH`
+- `API_KEY` (required bearer token value for all API endpoints)

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.auth import require_api_key
 
 from app.data.data_manager import DataManager
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["data"])
+router = APIRouter(prefix="/api", tags=["data"], dependencies=[Depends(require_api_key)])
 manager = DataManager()
 
 
