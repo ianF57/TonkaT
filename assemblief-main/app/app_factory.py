@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.api.auth import require_api_key
 from app.api.backtest import router as backtest_router
 from app.api.data import router as data_router
 from app.api.health import router as health_router
@@ -19,13 +20,13 @@ def create_app() -> FastAPI:
     """Application factory for the Assemblief dashboard service."""
     app = FastAPI(title=settings.app_name)
     app.include_router(ui_router)
-    app.include_router(health_router)
-    app.include_router(data_router)
-    app.include_router(regime_router)
-    app.include_router(signals_router)
-    app.include_router(backtest_router)
-    app.include_router(rank_router)
-    app.include_router(replay_router)
-    app.include_router(validate_router)
+    app.include_router(health_router, dependencies=[Depends(require_api_key)])
+    app.include_router(data_router, dependencies=[Depends(require_api_key)])
+    app.include_router(regime_router, dependencies=[Depends(require_api_key)])
+    app.include_router(signals_router, dependencies=[Depends(require_api_key)])
+    app.include_router(backtest_router, dependencies=[Depends(require_api_key)])
+    app.include_router(rank_router, dependencies=[Depends(require_api_key)])
+    app.include_router(replay_router, dependencies=[Depends(require_api_key)])
+    app.include_router(validate_router, dependencies=[Depends(require_api_key)])
     app.mount("/static", StaticFiles(directory="app/ui/static"), name="static")
     return app

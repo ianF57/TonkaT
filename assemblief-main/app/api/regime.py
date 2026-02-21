@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.auth import require_api_key
 
 from app.data.data_manager import DataManager
 from app.regime.regime_classifier import RegimeClassifier
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["regime"])
+router = APIRouter(prefix="/api", tags=["regime"], dependencies=[Depends(require_api_key)])
 manager = DataManager()
 classifier = RegimeClassifier()
 
