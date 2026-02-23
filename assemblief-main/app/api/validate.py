@@ -338,7 +338,32 @@ async def validate_category(cat: str) -> dict:
         raise HTTPException(404, {"error": f"Unknown category '{cat}'", "valid": sorted(valid_cats)})
 
     subset = [a for a in ASSETS if a["cat"] == cat]
-    now    = time.time()
+    now = time.time()
+
+    has_fresh_cache_for_all = all(
+        (cached := _cache.get(asset["id"])) is not None and (now - cached["fetched_at"]) < CACHE_TTL
+        for asset in subset
+    )
+    if has_fresh_cache_for_all:
+        cached_records = [
+            {
+                "id": asset["id"],
+                "symbol": asset["symbol"],
+                "name": asset["name"],
+                "cat": asset["cat"],
+                "emoji": asset["emoji"],
+                "unit": asset["unit"],
+                "source": _cache[asset["id"]].get("source", asset["src"]),
+                "live_price": round(_cache[asset["id"]]["price"], 6),
+                "exchange_ts": _cache[asset["id"]]["exchange_ts"],
+                "status": _cache[asset["id"]].get("status", "LIVE"),
+                "alert": _cache[asset["id"]].get("alert"),
+                "validated_at": datetime.now(UTC).isoformat(),
+            }
+            for asset in subset
+        ]
+        return _build_response(cached_records, from_cache=True)
+
     async with httpx.AsyncClient(headers=_YAHOO_HEADERS) as client:
         spots = await asyncio.gather(*[_yahoo_spot(a["symbol"], client) for a in subset])
     records = [_classify(a, s, now) for a, s in zip(subset, spots)]
