@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>✨ Assemblief Trader</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Nunito',sans-serif;background:linear-gradient(145deg,#f8f5ff 0%,#fff9f0 45%,#f0f8ff 100%);min-height:100vh;color:#2d1b69}
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-track{background:#f0ebff}
+    ::-webkit-scrollbar-thumb{background:linear-gradient(#845ef7,#f06595);border-radius:6px}
+    @keyframes rainbowSlide{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    .live-dot{animation:pulse 1.4s ease-in-out infinite}
+    .fade-in{animation:fadeIn 0.4s ease both}
+    #root{min-height:100vh}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+{% raw %}
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+const { LineChart, Line, AreaChart, Area, ResponsiveContainer, Tooltip } = Recharts;
+
+// ─── ASSET CATALOG ────────────────────────────────────────────────────────────
+const ASSETS = [
+  { id:'BTC',    name:'Bitcoin',     cat:'crypto',      emoji:'🟡', base:95000,  vol:0.014 },
+  { id:'ETH',    name:'Ethereum',    cat:'crypto',      emoji:'💎', base:3200,   vol:0.018 },
+  { id:'SOL',    name:'Solana',      cat:'crypto',      emoji:'💜', base:182,    vol:0.026 },
+  { id:'ADA',    name:'Cardano',     cat:'crypto',      emoji:'🔷', base:0.85,   vol:0.022 },
+  { id:'XRP',    name:'Ripple',      cat:'crypto',      emoji:'⚫', base:2.22,   vol:0.021 },
+  { id:'DOGE',   name:'Dogecoin',    cat:'crypto',      emoji:'🐕', base:0.32,   vol:0.030 },
+  { id:'BNB',    name:'BNB',         cat:'crypto',      emoji:'🟠', base:682,    vol:0.016 },
+  { id:'AVAX',   name:'Avalanche',   cat:'crypto',      emoji:'🔺', base:38,     vol:0.028 },
+  { id:'MATIC',  name:'Polygon',     cat:'crypto',      emoji:'🟣', base:0.52,   vol:0.025 },
+  { id:'LINK',   name:'Chainlink',   cat:'crypto',      emoji:'🔵', base:18,     vol:0.023 },
+  { id:'AAPL',   name:'Apple',       cat:'stocks',      emoji:'🍎', base:228,    vol:0.008 },
+  { id:'TSLA',   name:'Tesla',       cat:'stocks',      emoji:'⚡', base:362,    vol:0.021 },
+  { id:'AMZN',   name:'Amazon',      cat:'stocks',      emoji:'📦', base:225,    vol:0.010 },
+  { id:'MSFT',   name:'Microsoft',   cat:'stocks',      emoji:'🪟', base:415,    vol:0.007 },
+  { id:'NVDA',   name:'NVIDIA',      cat:'stocks',      emoji:'💚', base:140,    vol:0.019 },
+  { id:'META',   name:'Meta',        cat:'stocks',      emoji:'🌐', base:622,    vol:0.013 },
+  { id:'GOOGL',  name:'Alphabet',    cat:'stocks',      emoji:'🔍', base:196,    vol:0.009 },
+  { id:'NFLX',   name:'Netflix',     cat:'stocks',      emoji:'🎬', base:982,    vol:0.015 },
+  { id:'EURUSD', name:'EUR/USD',     cat:'forex',       emoji:'🇪🇺', base:1.045,  vol:0.003 },
+  { id:'GBPUSD', name:'GBP/USD',     cat:'forex',       emoji:'🇬🇧', base:1.258,  vol:0.004 },
+  { id:'USDJPY', name:'USD/JPY',     cat:'forex',       emoji:'🇯🇵', base:152.3,  vol:0.003 },
+  { id:'AUDUSD', name:'AUD/USD',     cat:'forex',       emoji:'🇦🇺', base:0.628,  vol:0.004 },
+  { id:'GOLD',   name:'Gold',        cat:'commodities', emoji:'🥇', base:2940,   vol:0.006 },
+  { id:'SILVER', name:'Silver',      cat:'commodities', emoji:'🥈', base:32.5,   vol:0.011 },
+  { id:'OIL',    name:'Crude Oil',   cat:'commodities', emoji:'🛢️', base:72,     vol:0.013 },
+  { id:'NATGAS', name:'Nat. Gas',    cat:'commodities', emoji:'🔥', base:3.8,    vol:0.016 },
+  { id:'SPX',    name:'S&P 500',     cat:'indices',     emoji:'📈', base:5900,   vol:0.007 },
+  { id:'NDX',    name:'NASDAQ',      cat:'indices',     emoji:'💻', base:21000,  vol:0.009 },
+  { id:'DJI',    name:'Dow Jones',   cat:'indices',     emoji:'🏛️', base:44200,  vol:0.005 },
+];
+
+const STRATEGIES = [
+  { id:'scalping', name:'Scalping',        emoji:'⚡', timeframe:'1m-5m',   risk:'High', desc:'Ultra-short momentum trades capturing micro-moves. Wins often, small per trade.' },
+  { id:'swing',    name:'Swing Trading',   emoji:'🌊', timeframe:'4h-1d',   risk:'Med',  desc:'Captures multi-day trend legs. Enters on pullbacks, exits at resistance.' },
+  { id:'trend',    name:'Trend Following', emoji:'🚀', timeframe:'1d-1w',   risk:'Med',  desc:'Rides established directional moves using MA crossovers and ADX confirmation.' },
+  { id:'meanrev',  name:'Mean Reversion',  emoji:'🔄', timeframe:'1h-4h',   risk:'Med',  desc:'Fades extreme RSI deviations back to the mean. High win-rate in ranging markets.' },
+  { id:'breakout', name:'Breakout',        emoji:'💥', timeframe:'1h-4h',   risk:'High', desc:'Enters when price breaks key levels with volume confirmation. High R:R.' },
+  { id:'grid',     name:'Grid Trading',    emoji:'🔲', timeframe:'Ongoing', risk:'Low',  desc:'Places buy/sell orders at fixed intervals. Profits from volatility, no direction bias.' },
+  { id:'dca',      name:'DCA',             emoji:'🪣', timeframe:'Weekly',  risk:'Low',  desc:'Regular fixed-amount buys regardless of price. Smooths entry cost over time.' },
+];
+
+const INDICATOR_NAMES = ['RSI','MACD','Bollinger Bands','MA Cross','Volume Spike','Fibonacci','Sentiment'];
+const CATS = ['all','crypto','stocks','forex','commodities','indices'];
+const CAT_LABELS = { all:'🌍 All', crypto:'🟡 Crypto', stocks:'📊 Stocks', forex:'🌐 Forex', commodities:'🏗️ Commodities', indices:'📈 Indices' };
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function sr(seed) { const x = Math.sin(seed * 9301 + 49297) * 233280; return (x - Math.floor(x)); }
+
+function genSparkline(base, vol, len = 55) {
+  let p = base; const d = [];
+  for (let i = 0; i < len; i++) { p = p * (1 + (sr(i * 0.7 + base * 0.001) - 0.5) * vol * 1.8); d.push({ v: p }); }
+  return d;
+}
+
+function fmtPrice(price, id) {
+  if (['EURUSD','GBPUSD','AUDUSD'].includes(id)) return price.toFixed(4);
+  if (id === 'USDJPY') return price.toFixed(2);
+  if (price >= 10000) return price.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (price >= 100)   return price.toFixed(2);
+  if (price >= 1)     return price.toFixed(3);
+  return price.toFixed(4);
+}
+
+function fmtPct(v) { return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
+
+function computeSignal(a) {
+  let s = 0;
+  if (a.rsi < 28) s += 3; else if (a.rsi < 38) s += 1;
+  else if (a.rsi > 72) s -= 3; else if (a.rsi > 62) s -= 1;
+  if (a.macd > 0.4) s += 1; else if (a.macd < -0.4) s -= 1;
+  if (a.bbPos < 0.18) s += 1; else if (a.bbPos > 0.82) s -= 1;
+  if (a.sentiment > 65) s += 1; else if (a.sentiment < 30) s -= 1;
+  if (s >= 4) return 'STRONG BUY';
+  if (s >= 1) return 'BUY';
+  if (s <= -4) return 'STRONG SELL';
+  if (s <= -1) return 'SELL';
+  return 'NEUTRAL';
+}
+
+const SIG_META = {
+  'STRONG BUY':  { color:'#16a34a', bg:'#dcfce7', border:'#86efac', label:'●● STRONG BUY' },
+  'BUY':         { color:'#22c55e', bg:'#f0fdf4', border:'#bbf7d0', label:'● BUY' },
+  'NEUTRAL':     { color:'#ca8a04', bg:'#fefce8', border:'#fde68a', label:'◐ NEUTRAL' },
+  'SELL':        { color:'#dc2626', bg:'#fef2f2', border:'#fecaca', label:'● SELL' },
+  'STRONG SELL': { color:'#991b1b', bg:'#fee2e2', border:'#fca5a5', label:'●● STRONG SELL' },
+};
+
+function genSignal(seed) {
+  const a = ASSETS[Math.floor(sr(seed) * ASSETS.length)];
+  const ind = INDICATOR_NAMES[Math.floor(sr(seed + 0.3) * INDICATOR_NAMES.length)];
+  const sigs = ['STRONG BUY','BUY','NEUTRAL','SELL','STRONG SELL'];
+  const sig = sigs[Math.floor(sr(seed + 0.7) * sigs.length)];
+  const conf = Math.round(55 + sr(seed + 0.5) * 40);
+  const whyMap = {
+    'RSI': sig.includes('BUY') ? `RSI hit ${Math.round(20+sr(seed)*15)} — deep oversold zone. RSI below 30 precedes a bounce 68% of the time historically.` : `RSI at ${Math.round(70+sr(seed)*15)} — overbought. Pullback likely as buying pressure exhausts.`,
+    'MACD': sig.includes('BUY') ? `MACD line crossed above signal line. Bullish momentum confirmed on the ${['1h','4h','1d'][Math.floor(sr(seed+0.1)*3)]} chart.` : `MACD bearish cross detected. Histogram turned negative for 2nd consecutive bar — sellers in control.`,
+    'Bollinger Bands': sig.includes('BUY') ? `Price touched lower Bollinger Band (2σ). Mean-reverts 77% of cases in this regime.` : `Price pierced upper Bollinger Band with shrinking volume — potential reversal zone.`,
+    'MA Cross': sig.includes('BUY') ? `20 EMA crossed above 50 SMA. Golden cross forming on daily chart. Trend bias shifts bullish.` : `Death cross: 20 EMA dropped below 50 SMA. Trend bias shifts bearish.`,
+    'Volume Spike': `Volume ${Math.round(200+sr(seed+0.2)*300)}% above 20-day average. Institutional activity detected — watch for follow-through.`,
+    'Fibonacci': sig.includes('BUY') ? `Price bounced off 0.618 Fibonacci retracement — the "golden ratio" support level.` : `Price failed at 0.786 Fibonacci resistance. Sellers defending this key level.`,
+    'Sentiment': sig.includes('BUY') ? `Social sentiment flipped bullish: ${Math.round(60+sr(seed+0.4)*30)}% positive mentions. Fear index dropping.` : `Negative sentiment spike: ${Math.round(60+sr(seed+0.4)*30)}% bearish mentions in last 4 hours.`,
+  };
+  return {
+    id: seed,
+    assetId: a.id, assetName: a.name, assetEmoji: a.emoji,
+    indicator: ind, signal: sig, confidence: conf,
+    why: whyMap[ind] || 'Multi-indicator confluence triggered this signal.',
+    time: new Date(Date.now() - Math.floor(sr(seed+0.9) * 600000)).toLocaleTimeString(),
+  };
+}
+
+// ─── SUB-COMPONENTS ───────────────────────────────────────────────────────────
+function SignalBadge({ signal, small }) {
+  const m = SIG_META[signal] || SIG_META['NEUTRAL'];
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', gap:3,
+      background:m.bg, color:m.color, border:`1.5px solid ${m.border}`,
+      borderRadius:20, padding:small?'2px 8px':'3px 10px',
+      fontSize:small?10:11, fontWeight:800, letterSpacing:'0.04em', whiteSpace:'nowrap' }}>
+      {m.label}
+    </span>
+  );
+}
+
+function Spark({ data, pos }) {
+  const color = pos ? '#22c55e' : '#ef4444';
+  return (
+    <ResponsiveContainer width="100%" height={40}>
+      <LineChart data={data} margin={{top:2,right:2,left:2,bottom:2}}>
+        <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} dot={false}/>
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function MiniEquity({ data }) {
+  return (
+    <ResponsiveContainer width="100%" height={60}>
+      <AreaChart data={data} margin={{top:2,right:2,left:2,bottom:2}}>
+        <defs>
+          <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#845ef7" stopOpacity={0.3}/>
+            <stop offset="95%" stopColor="#845ef7" stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <Area type="monotone" dataKey="v" stroke="#845ef7" strokeWidth={1.5} fill="url(#eqGrad)" dot={false}/>
+        <Tooltip contentStyle={{fontSize:10,fontFamily:'Nunito'}} formatter={v=>`$${Math.round(v).toLocaleString()}`} labelFormatter={()=>''}/>
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function ConfBar({ val, color = '#845ef7' }) {
+  return (
+    <div style={{ height:6, background:'#e8e0ff', borderRadius:6, overflow:'hidden', marginTop:4 }}>
+      <div style={{ height:'100%', width:`${val}%`, background:`linear-gradient(90deg,${color},${color}cc)`, borderRadius:6, transition:'width 0.8s ease' }}/>
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function TradingAssistant() {
+  const [tab, setTab] = useState('dashboard');
+  const [cat, setCat] = useState('all');
+  const [expandedSignal, setExpandedSignal] = useState(null);
+  const [autoMode, setAutoMode] = useState({});
+  const [time, setTime] = useState(new Date());
+
+  const [assets, setAssets] = useState(() =>
+    ASSETS.map((a, i) => ({
+      ...a,
+      price:     a.base * (1 + (sr(i*17+1) - 0.5) * 0.04),
+      change24h: (sr(i*7+2) - 0.44) * 9,
+      sparkline: genSparkline(a.base, a.vol),
+      rsi:       Math.round(20 + sr(i*13+3) * 65),
+      macd:      (sr(i*11+4) - 0.5) * 2.5,
+      bbPos:     sr(i*19+5),
+      sentiment: Math.round(15 + sr(i*29+7) * 75),
+      volatility:1 + sr(i*31+8) * 5,
+    }))
+  );
+
+  const [strategies, setStrategies] = useState(() =>
+    STRATEGIES.map((s, i) => ({
+      ...s,
+      score:      Math.round(48 + sr(i*37+9) * 48),
+      confidence: Math.round(44 + sr(i*41+10) * 52),
+      winRate:    Math.round(40 + sr(i*43+11) * 48),
+      pnl24h:     (sr(i*47+12) - 0.38) * 14,
+      trades24h:  Math.round(3 + sr(i*53+13) * 28),
+      equity:     Array.from({length:30}, (_, j) => ({ v: 10000 * (0.9 + sr(i*53+j+14)*0.4) })),
+    }))
+  );
+
+  const [signals, setSignals] = useState(() =>
+    Array.from({length:20}, (_, i) => genSignal(i * 0.17 + 0.01))
+  );
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setTime(new Date());
+      setAssets(prev => prev.map(a => {
+        const delta = (Math.random() - 0.499) * a.vol * 1.6;
+        const newP  = a.price * (1 + delta);
+        return {
+          ...a,
+          price:     newP,
+          change24h: Math.max(-25, Math.min(25, a.change24h + (Math.random()-0.5)*0.4)),
+          sparkline: [...a.sparkline.slice(1), { v: newP }],
+          rsi:       Math.max(5, Math.min(95, a.rsi + (Math.random()-0.5)*3.5)),
+          macd:      a.macd + (Math.random()-0.5)*0.12,
+          bbPos:     Math.max(0.01, Math.min(0.99, a.bbPos + (Math.random()-0.5)*0.06)),
+          sentiment: Math.max(5, Math.min(95, a.sentiment + (Math.random()-0.5)*4)),
+        };
+      }));
+      if (Math.random() < 0.35) {
+        setStrategies(prev => prev.map(s => ({
+          ...s,
+          score:      Math.max(30, Math.min(99, s.score + Math.round((Math.random()-0.5)*5))),
+          confidence: Math.max(30, Math.min(99, s.confidence + Math.round((Math.random()-0.5)*4))),
+          pnl24h:     s.pnl24h + (Math.random()-0.5)*0.4,
+        })));
+      }
+      if (Math.random() < 0.3) {
+        setSignals(prev => [genSignal(Date.now()*Math.random()), ...prev.slice(0,29)]);
+      }
+    }, 1800);
+    return () => clearInterval(iv);
+  }, []);
+
+  const sortedStrats  = useMemo(() => [...strategies].sort((a,b) => b.score - a.score), [strategies]);
+  const enrichedAssets = useMemo(() => assets.map(a => ({ ...a, signal: computeSignal(a) })), [assets]);
+  const filteredAssets = useMemo(() => cat === 'all' ? enrichedAssets : enrichedAssets.filter(a => a.cat === cat), [enrichedAssets, cat]);
+
+  const opportunities = useMemo(() =>
+    [...enrichedAssets]
+      .filter(a => a.signal === 'STRONG BUY' || a.signal === 'BUY')
+      .sort((a,b) => {
+        const sc = x => (x.signal==='STRONG BUY'?10:5) + x.sentiment*0.03 + (x.rsi<35?5:0);
+        return sc(b) - sc(a);
+      }).slice(0,3)
+  , [enrichedAssets]);
+
+  const bullish = enrichedAssets.filter(a => a.signal.includes('BUY')).length;
+  const bearish = enrichedAssets.filter(a => a.signal.includes('SELL')).length;
+  const mood    = bullish > bearish + 5 ? '🟢 Bullish' : bearish > bullish + 5 ? '🔴 Bearish' : '🟡 Mixed';
+
+  // ─── STYLES ───────────────────────────────────────────────────────────────
+  const card = { background:'rgba(255,255,255,0.88)', borderRadius:20, border:'2px solid #e8e0ff', boxShadow:'0 4px 20px rgba(130,100,220,0.10)', padding:18 };
+  const sTitle = { fontFamily:"'Fredoka One',cursive", fontSize:18, color:'#3d2069', marginBottom:14, display:'flex', alignItems:'center', gap:8 };
+  const tabBtn = (active) => ({
+    fontFamily:"'Fredoka One',cursive", fontSize:15, border:'none', borderRadius:14,
+    padding:'8px 18px', cursor:'pointer', transition:'all 0.18s',
+    background: active ? 'linear-gradient(135deg,#845ef7,#4d96ff)' : '#f3eeff',
+    color:       active ? 'white' : '#7c5cbf',
+    boxShadow:   active ? '0 4px 12px rgba(132,94,247,0.35)' : 'none',
+  });
+  const medals = ['🥇','🥈','🥉'];
+
+  return (
+    <div style={{ fontFamily:"'Nunito',sans-serif", background:'linear-gradient(145deg,#f8f5ff 0%,#fff9f0 45%,#f0f8ff 100%)', minHeight:'100vh', color:'#2d1b69' }}>
+
+      {/* ── RAINBOW BAR ── */}
+      <div style={{ height:5, background:'linear-gradient(90deg,#ff6b6b,#ff9f43,#ffd93d,#6bcb77,#4d96ff,#845ef7,#f06595,#ff6b6b)', backgroundSize:'200% 100%', animation:'rainbowSlide 4s linear infinite' }}/>
+
+      {/* ── HEADER ── */}
+      <div style={{ background:'rgba(255,255,255,0.92)', backdropFilter:'blur(12px)', borderBottom:'2px solid #e8e0ff', padding:'12px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12, position:'sticky', top:0, zIndex:100 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <span style={{ fontSize:28 }}>🌈</span>
+          <div>
+            <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:22, background:'linear-gradient(90deg,#845ef7,#4d96ff,#f06595)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', lineHeight:1.1 }}>Assemblief Trader</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#a890d3', letterSpacing:'0.08em' }}>LIVE STRATEGY SCOREBOARD</div>
+          </div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
+          <a href="/" style={{ fontFamily:"'Fredoka One',cursive", fontSize:13, color:'#845ef7', textDecoration:'none', background:'#f3eeff', borderRadius:14, padding:'6px 14px', border:'1.5px solid #ddd6ff' }}>← Dashboard</a>
+          <div style={{ display:'flex', alignItems:'center', gap:6, background:'#f0fdf4', border:'1.5px solid #86efac', borderRadius:20, padding:'4px 14px', fontSize:13, fontWeight:800, color:'#16a34a' }}>
+            <span className="live-dot">●</span> LIVE
+          </div>
+          <div style={{ fontSize:12, fontWeight:700, color:'#7c6aad', background:'#f3eeff', borderRadius:14, padding:'4px 12px' }}>🕐 {time.toLocaleTimeString()}</div>
+          <div style={{ fontSize:12, fontWeight:800, background:'#fff8e7', border:'1.5px solid #fde68a', borderRadius:14, padding:'4px 12px', color:'#92400e' }}>Market: {mood}</div>
+          <div style={{ fontSize:12, fontWeight:700, color:'#7c6aad' }}>🟢 {bullish} / 🔴 {bearish} / ⚪ {enrichedAssets.length - bullish - bearish}</div>
+        </div>
+      </div>
+
+      {/* ── TABS ── */}
+      <div style={{ display:'flex', gap:8, padding:'12px 24px', background:'rgba(255,255,255,0.7)', borderBottom:'1.5px solid #e8e0ff', flexWrap:'wrap' }}>
+        {[['dashboard','🏠 Dashboard'],['assets','📊 All Assets'],['strategies','⚡ Strategies'],['signals','📡 Signals']].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} style={tabBtn(tab===id)}>{label}</button>
+        ))}
+      </div>
+
+      <div style={{ padding:'20px 24px', maxWidth:1400, margin:'0 auto' }}>
+
+        {/* ════════ DASHBOARD ════════ */}
+        {tab === 'dashboard' && (
+          <div className="fade-in">
+
+            {/* WHERE TO PUT MONEY */}
+            <div style={{ marginBottom:24 }}>
+              <div style={sTitle}>💡 Where to Put Money Right Now</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:16 }}>
+                {opportunities.length === 0 && (
+                  <div style={{ ...card, color:'#a890d3', fontWeight:700, textAlign:'center', padding:30 }}>🟡 No strong buy signals right now. Market is mixed — stay patient!</div>
+                )}
+                {opportunities.map((a, i) => (
+                  <div key={a.id} style={{ ...card, border:`2.5px solid ${SIG_META[a.signal].border}`, position:'relative', overflow:'hidden' }}>
+                    <div style={{ position:'absolute', top:0, left:0, right:0, height:4, background: i===0?'linear-gradient(90deg,#22c55e,#16a34a)': i===1?'linear-gradient(90deg,#4d96ff,#845ef7)':'linear-gradient(90deg,#f06595,#ff9f43)' }}/>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
+                      <div>
+                        <div style={{ fontSize:22, marginBottom:2 }}>{medals[i]} {a.emoji} {a.id}</div>
+                        <div style={{ fontSize:13, fontWeight:700, color:'#7c6aad' }}>{a.name}</div>
+                      </div>
+                      <SignalBadge signal={a.signal}/>
+                    </div>
+                    <div style={{ height:50, marginBottom:10 }}><Spark data={a.sparkline} pos={a.change24h>=0}/></div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6, marginBottom:10 }}>
+                      {[['Price',fmtPrice(a.price,a.id)],['24h',fmtPct(a.change24h)],['RSI',a.rsi]].map(([l,v]) => (
+                        <div key={l} style={{ textAlign:'center', background:'#f8f5ff', borderRadius:10, padding:'6px 4px' }}>
+                          <div style={{ fontSize:9, fontWeight:800, color:'#a890d3', textTransform:'uppercase', letterSpacing:'0.06em' }}>{l}</div>
+                          <div style={{ fontSize:13, fontWeight:800, color: l==='24h'?(a.change24h>=0?'#16a34a':'#dc2626'):'#3d2069', fontFamily:"'Fredoka One',cursive" }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#7c6aad', marginBottom:4 }}>
+                      🎯 Best strategy: <span style={{ color:'#845ef7' }}>{sortedStrats[0]?.emoji} {sortedStrats[0]?.name}</span>
+                    </div>
+                    <div style={{ fontSize:11, color:'#a890d3', fontWeight:600 }}>
+                      RSI {a.rsi < 35 ? '⬇️ oversold' : '➡️ neutral'} · Sent. {a.sentiment}%
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* SCOREBOARD + SIGNAL FEED */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, marginBottom:24 }}>
+
+              <div style={card}>
+                <div style={sTitle}>🏆 Strategy Scoreboard</div>
+                {sortedStrats.map((s, i) => (
+                  <div key={s.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom: i<6?'1.5px dashed #e8e0ff':'none' }}>
+                    <div style={{ fontSize:18, minWidth:28 }}>{i<3?medals[i]:`#${i+1}`}</div>
+                    <div style={{ fontSize:16 }}>{s.emoji}</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:14, color:'#3d2069' }}>{s.name}</div>
+                      <ConfBar val={s.score} color={s.score>75?'#22c55e':s.score>55?'#845ef7':'#f59e0b'}/>
+                    </div>
+                    <div style={{ textAlign:'right', minWidth:52 }}>
+                      <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:16, color:'#845ef7' }}>{s.score}</div>
+                      <div style={{ fontSize:10, fontWeight:800, color: s.pnl24h>=0?'#16a34a':'#dc2626' }}>{fmtPct(s.pnl24h)}</div>
+                    </div>
+                    <div style={{ textAlign:'right', minWidth:44 }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:'#a890d3' }}>Conf.</div>
+                      <div style={{ fontWeight:800, fontSize:13, color:'#6d4dc0' }}>{s.confidence}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={card}>
+                <div style={sTitle}>📡 Live Signal Feed</div>
+                <div style={{ maxHeight:360, overflowY:'auto', display:'flex', flexDirection:'column', gap:8 }}>
+                  {signals.slice(0,15).map((sig, i) => (
+                    <div key={sig.id} onClick={() => setExpandedSignal(expandedSignal===i?null:i)}
+                      style={{ background: SIG_META[sig.signal]?.bg||'#f8f5ff', border:`1.5px solid ${SIG_META[sig.signal]?.border||'#e8e0ff'}`, borderRadius:12, padding:'8px 12px', cursor:'pointer' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <span style={{ fontSize:16 }}>{sig.assetEmoji}</span>
+                          <span style={{ fontFamily:"'Fredoka One',cursive", fontSize:13 }}>{sig.assetId}</span>
+                          <span style={{ fontSize:11, color:'#7c6aad', fontWeight:600 }}>{sig.indicator}</span>
+                        </div>
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <SignalBadge signal={sig.signal} small/>
+                          <span style={{ fontSize:10, color:'#a890d3', fontWeight:700 }}>{sig.time}</span>
+                        </div>
+                      </div>
+                      {expandedSignal === i && (
+                        <div style={{ fontSize:11, color:'#5b3fa0', fontWeight:600, marginTop:8, paddingTop:8, borderTop:'1px dashed #e8e0ff' }}>
+                          💡 <strong>Why:</strong> {sig.why}<br/>
+                          <span style={{ color:'#845ef7', fontWeight:700 }}>Confidence: {sig.confidence}%</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop:8, fontSize:11, color:'#a890d3', fontWeight:700, textAlign:'center' }}>👆 Click any signal to see why it fired</div>
+              </div>
+            </div>
+
+            {/* HOTTEST ASSETS */}
+            <div>
+              <div style={sTitle}>🔥 Hottest Assets Right Now</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))', gap:14 }}>
+                {[...enrichedAssets].sort((a,b) => Math.abs(b.change24h)-Math.abs(a.change24h)).slice(0,6).map(a => (
+                  <div key={a.id} style={{ ...card, padding:14 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                      <span style={{ fontFamily:"'Fredoka One',cursive", fontSize:15 }}>{a.emoji} {a.id}</span>
+                      <SignalBadge signal={a.signal} small/>
+                    </div>
+                    <div style={{ height:40, marginBottom:8 }}><Spark data={a.sparkline} pos={a.change24h>=0}/></div>
+                    <div style={{ display:'flex', justifyContent:'space-between' }}>
+                      <span style={{ fontSize:12, fontWeight:800 }}>{fmtPrice(a.price,a.id)}</span>
+                      <span style={{ fontSize:12, fontWeight:800, color:a.change24h>=0?'#16a34a':'#dc2626' }}>{fmtPct(a.change24h)}</span>
+                    </div>
+                    <div style={{ fontSize:10, fontWeight:700, color:'#a890d3', marginTop:4 }}>RSI {Math.round(a.rsi)} · Sent. {a.sentiment}%</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ════════ ASSETS ════════ */}
+        {tab === 'assets' && (
+          <div className="fade-in">
+            <div style={{ display:'flex', gap:8, marginBottom:20, flexWrap:'wrap' }}>
+              {CATS.map(c => (
+                <button key={c} onClick={() => setCat(c)} style={{
+                  fontFamily:"'Fredoka One',cursive", fontSize:13, border:'none', borderRadius:14,
+                  padding:'8px 18px', cursor:'pointer', transition:'all 0.18s',
+                  background: cat===c?'linear-gradient(135deg,#845ef7,#f06595)':'#f3eeff',
+                  color: cat===c?'white':'#7c5cbf',
+                  boxShadow: cat===c?'0 3px 10px rgba(132,94,247,0.35)':'none',
+                }}>{CAT_LABELS[c]}</button>
+              ))}
+            </div>
+            <div style={{ ...card, padding:0, overflow:'hidden' }}>
+              <div style={{ display:'grid', gridTemplateColumns:'2fr 1.2fr 1fr 1fr 1fr 1fr 1.2fr 1.5fr', padding:'10px 16px', background:'linear-gradient(135deg,#f3eeff,#fff3f8)', borderBottom:'2px solid #e8e0ff', fontSize:10, fontWeight:900, color:'#845ef7', textTransform:'uppercase', letterSpacing:'0.08em' }}>
+                {['Asset','Price','24h Chg','RSI','Sentiment','Volatility','Signal','Trend'].map(h=><div key={h}>{h}</div>)}
+              </div>
+              <div style={{ maxHeight:520, overflowY:'auto' }}>
+                {filteredAssets.map((a, i) => {
+                  const rsiColor = a.rsi<30?'#16a34a':a.rsi>70?'#dc2626':'#ca8a04';
+                  return (
+                    <div key={a.id} style={{ display:'grid', gridTemplateColumns:'2fr 1.2fr 1fr 1fr 1fr 1fr 1.2fr 1.5fr', padding:'10px 16px', borderBottom:'1.5px solid #f0ebff', alignItems:'center', background:i%2===0?'transparent':'rgba(248,245,255,0.5)' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <span style={{ fontSize:18 }}>{a.emoji}</span>
+                        <div>
+                          <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:14 }}>{a.id}</div>
+                          <div style={{ fontSize:10, color:'#a890d3', fontWeight:600 }}>{a.name}</div>
+                        </div>
+                      </div>
+                      <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:14 }}>{fmtPrice(a.price,a.id)}</div>
+                      <div style={{ fontWeight:800, fontSize:13, color:a.change24h>=0?'#16a34a':'#dc2626' }}>{fmtPct(a.change24h)}</div>
+                      <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:14, color:rsiColor }}>{Math.round(a.rsi)}</div>
+                      <div>
+                        <div style={{ fontSize:12, fontWeight:700, color:a.sentiment>60?'#16a34a':a.sentiment<35?'#dc2626':'#ca8a04' }}>{a.sentiment}%</div>
+                        <ConfBar val={a.sentiment} color={a.sentiment>60?'#22c55e':a.sentiment<35?'#ef4444':'#eab308'}/>
+                      </div>
+                      <div style={{ fontSize:12, fontWeight:700, color:'#845ef7' }}>{a.volatility.toFixed(1)}%</div>
+                      <SignalBadge signal={a.signal} small/>
+                      <div style={{ height:36 }}><Spark data={a.sparkline} pos={a.change24h>=0}/></div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ marginTop:20, ...card, background:'linear-gradient(135deg,rgba(132,94,247,0.06),rgba(77,150,255,0.06))' }}>
+              <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:15, color:'#3d2069', marginBottom:10 }}>🔗 Asset Correlations (30d)</div>
+              <div style={{ display:'flex', gap:10, flexWrap:'wrap', fontSize:11, fontWeight:700 }}>
+                {[['BTC ↔ ETH','92% +'],['BTC ↔ SOL','84% +'],['AAPL ↔ MSFT','78% +'],['BTC ↔ GOLD','34% +'],['USD/JPY ↔ OIL','-41% −'],['NVDA ↔ NDX','88% +'],['GOLD ↔ SPX','-18% −']].map(([pair,corr])=>(
+                  <div key={pair} style={{ background:'white', border:'1.5px solid #e8e0ff', borderRadius:12, padding:'5px 12px', display:'flex', gap:8, alignItems:'center' }}>
+                    <span style={{ color:'#845ef7' }}>{pair}</span>
+                    <span style={{ color:corr.includes('+')? '#16a34a':'#dc2626', fontFamily:"'Fredoka One',cursive" }}>{corr}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ════════ STRATEGIES ════════ */}
+        {tab === 'strategies' && (
+          <div className="fade-in">
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))', gap:18 }}>
+              {sortedStrats.map((s, i) => {
+                const isAuto = autoMode[s.id];
+                return (
+                  <div key={s.id} style={{ ...card, position:'relative', overflow:'hidden' }}>
+                    <div style={{ position:'absolute', top:14, right:14, fontFamily:"'Fredoka One',cursive", fontSize:22 }}>{i<3?medals[i]:`#${i+1}`}</div>
+                    <div style={{ position:'absolute', top:0, left:0, right:0, height:4, background: s.score>75?'linear-gradient(90deg,#22c55e,#16a34a)':s.score>55?'linear-gradient(90deg,#845ef7,#4d96ff)':'linear-gradient(90deg,#f59e0b,#ef4444)' }}/>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, marginTop:6 }}>
+                      <div style={{ fontSize:28 }}>{s.emoji}</div>
+                      <div>
+                        <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:18, color:'#3d2069' }}>{s.name}</div>
+                        <div style={{ fontSize:11, color:'#a890d3', fontWeight:600 }}>⏱ {s.timeframe} · Risk: {s.risk}</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize:12, color:'#5b3fa0', fontWeight:600, marginBottom:14, lineHeight:1.5, background:'#f8f5ff', borderRadius:10, padding:'8px 12px' }}>
+                      📚 <strong>How it works:</strong> {s.desc}
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:8, marginBottom:14 }}>
+                      {[
+                        ['Score', `${s.score}/100`, s.score>75?'#16a34a':s.score>55?'#845ef7':'#ca8a04'],
+                        ['Confidence', `${s.confidence}%`, '#4d96ff'],
+                        ['Win Rate', `${s.winRate}%`, s.winRate>55?'#16a34a':'#dc2626'],
+                        ['24h PnL', fmtPct(s.pnl24h), s.pnl24h>=0?'#16a34a':'#dc2626'],
+                      ].map(([l,v,c]) => (
+                        <div key={l} style={{ textAlign:'center', background:'white', border:'1.5px solid #e8e0ff', borderRadius:12, padding:'8px 6px' }}>
+                          <div style={{ fontSize:9, fontWeight:800, color:'#a890d3', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>{l}</div>
+                          <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:15, color:c }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ marginBottom:14 }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:'#a890d3', marginBottom:4 }}>📈 30-Day Equity Curve</div>
+                      <MiniEquity data={s.equity}/>
+                    </div>
+                    <div style={{ fontSize:11, color:'#7c6aad', fontWeight:600, marginBottom:12, padding:'6px 10px', background:'#f3eeff', borderRadius:10 }}>
+                      🔬 Backtest (30d): {s.trades24h*30} trades · Max DD {(5+i*2.1).toFixed(1)}% · Sharpe {(0.8+s.score*0.015).toFixed(2)}
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background:isAuto?'#dcfce7':'#f3eeff', border:`2px solid ${isAuto?'#86efac':'#ddd6ff'}`, borderRadius:14, padding:'8px 14px' }}>
+                      <div>
+                        <div style={{ fontSize:12, fontWeight:800, color:isAuto?'#16a34a':'#845ef7' }}>{isAuto?'🤖 AUTO EXECUTION':'👤 MANUAL MODE'}</div>
+                        <div style={{ fontSize:10, color:'#a890d3', fontWeight:600 }}>{isAuto?'Signals auto-execute (demo)':'Click signals to act manually'}</div>
+                      </div>
+                      <div onClick={() => setAutoMode(prev => ({...prev,[s.id]:!prev[s.id]}))}
+                        style={{ width:46, height:26, background:isAuto?'#22c55e':'#c4b5fd', borderRadius:13, cursor:'pointer', position:'relative', transition:'background 0.3s' }}>
+                        <div style={{ position:'absolute', top:3, left:isAuto?22:3, width:20, height:20, background:'white', borderRadius:'50%', transition:'left 0.3s', boxShadow:'0 2px 6px rgba(0,0,0,0.2)' }}/>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ════════ SIGNALS ════════ */}
+        {tab === 'signals' && (
+          <div className="fade-in">
+            <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:20 }}>
+              <div style={card}>
+                <div style={sTitle}>📡 All Live Signals</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:10, maxHeight:600, overflowY:'auto' }}>
+                  {signals.map((sig, i) => (
+                    <div key={sig.id} onClick={() => setExpandedSignal(expandedSignal===`s${i}`?null:`s${i}`)}
+                      style={{ ...card, padding:'12px 14px', border:`2px solid ${SIG_META[sig.signal]?.border||'#e8e0ff'}`, cursor:'pointer', background:SIG_META[sig.signal]?.bg }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                          <span style={{ fontSize:20 }}>{sig.assetEmoji}</span>
+                          <div>
+                            <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:15 }}>{sig.assetId} <span style={{ fontSize:11, color:'#7c6aad', fontWeight:700 }}>· {sig.indicator}</span></div>
+                            <div style={{ fontSize:11, color:'#a890d3', fontWeight:600 }}>{sig.assetName} · {sig.time}</div>
+                          </div>
+                        </div>
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <div style={{ textAlign:'right' }}><div style={{ fontSize:11, fontWeight:700, color:'#845ef7' }}>{sig.confidence}% conf.</div></div>
+                          <SignalBadge signal={sig.signal}/>
+                        </div>
+                      </div>
+                      {expandedSignal === `s${i}` && (
+                        <div style={{ marginTop:10, padding:'10px 14px', background:'rgba(255,255,255,0.7)', borderRadius:12, fontSize:12, lineHeight:1.6, color:'#4a3080', fontWeight:600 }}>
+                          <div style={{ marginBottom:6 }}>💡 <strong>Why this signal fired:</strong></div>
+                          <div style={{ marginBottom:8 }}>{sig.why}</div>
+                          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+                            <span style={{ background:'#f3eeff', borderRadius:8, padding:'3px 10px', fontSize:11, color:'#845ef7', fontWeight:800 }}>🎯 {sig.indicator}</span>
+                            <span style={{ background:'#f0fdf4', borderRadius:8, padding:'3px 10px', fontSize:11, color:'#16a34a', fontWeight:800 }}>📊 {sig.confidence}% confidence</span>
+                            <span style={{ background:'#fff8e7', borderRadius:8, padding:'3px 10px', fontSize:11, color:'#92400e', fontWeight:800 }}>⏰ {sig.time}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop:8, fontSize:11, color:'#a890d3', fontWeight:700, textAlign:'center' }}>👆 Click any signal to see the full explanation</div>
+              </div>
+
+              <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
+                <div style={card}>
+                  <div style={sTitle}>📊 Indicator Snapshot</div>
+                  {enrichedAssets.slice(0,6).map(a => (
+                    <div key={a.id} style={{ marginBottom:12 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                        <div style={{ fontFamily:"'Fredoka One',cursive", fontSize:13 }}>{a.emoji} {a.id}</div>
+                        <SignalBadge signal={a.signal} small/>
+                      </div>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:4 }}>
+                        {[['RSI',Math.round(a.rsi),a.rsi<30?'🟢':a.rsi>70?'🔴':'🟡'],
+                          ['MACD',a.macd.toFixed(2),a.macd>0?'🟢':'🔴'],
+                          ['Sent.',`${a.sentiment}%`,a.sentiment>60?'🟢':a.sentiment<35?'🔴':'🟡']].map(([l,v,e])=>(
+                          <div key={l} style={{ textAlign:'center', background:'#f8f5ff', borderRadius:8, padding:'4px' }}>
+                            <div style={{ fontSize:9, fontWeight:800, color:'#a890d3' }}>{l}</div>
+                            <div style={{ fontSize:12, fontWeight:800, color:'#3d2069' }}>{e} {v}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={card}>
+                  <div style={sTitle}>📢 Volatility Alerts</div>
+                  {enrichedAssets.filter(a => a.volatility>3).slice(0,6).map(a => (
+                    <div key={a.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 0', borderBottom:'1.5px dashed #e8e0ff' }}>
+                      <span style={{ fontFamily:"'Fredoka One',cursive", fontSize:13 }}>{a.emoji} {a.id}</span>
+                      <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                        <span style={{ fontSize:11, fontWeight:800, color:'#f59e0b' }}>⚡ {a.volatility.toFixed(1)}%</span>
+                        <SignalBadge signal={a.signal} small/>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={card}>
+                  <div style={sTitle}>💬 Sentiment Radar</div>
+                  {[...enrichedAssets].sort((a,b)=>b.sentiment-a.sentiment).slice(0,7).map(a=>(
+                    <div key={a.id} style={{ marginBottom:8 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:2 }}>
+                        <span style={{ fontSize:12, fontWeight:700 }}>{a.emoji} {a.id}</span>
+                        <span style={{ fontSize:12, fontWeight:800, color:a.sentiment>60?'#16a34a':a.sentiment<35?'#dc2626':'#ca8a04' }}>{a.sentiment}%</span>
+                      </div>
+                      <ConfBar val={a.sentiment} color={a.sentiment>60?'#22c55e':a.sentiment<35?'#ef4444':'#eab308'}/>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── FOOTER ── */}
+      <div style={{ textAlign:'center', padding:'20px 24px', fontSize:11, fontWeight:700, color:'#c4b5fd', borderTop:'1.5px solid #e8e0ff', marginTop:20, background:'rgba(255,255,255,0.5)' }}>
+        🌈 Assemblief Trader · Simulated data for educational purposes · Not financial advice ✨
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<TradingAssistant/>);
+</script>
+{% endraw %}
+</body>
+</html>
