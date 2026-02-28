@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
+
+from app.api.auth import require_api_key
+from app.api.backtest import router as backtest_router
+from app.api.data import router as data_router
+from app.api.health import router as health_router
+from app.api.incremental import router as incremental_router
+from app.api.integrity import router as integrity_router
+from app.api.rank import router as rank_router
+from app.api.regime import router as regime_router
+from app.api.replay import router as replay_router
+from app.api.signals import router as signals_router
+from app.api.store import router as store_router
+from app.api.validate import router as validate_router
+from app.ui.router import router as ui_router
+from config import settings
+
+
+def create_app() -> FastAPI:
+    """Application factory for the Assemblief dashboard service."""
+    app = FastAPI(title=settings.app_name)
+    app.include_router(ui_router)
+    app.include_router(health_router,      dependencies=[Depends(require_api_key)])
+    app.include_router(data_router,        dependencies=[Depends(require_api_key)])
+    app.include_router(regime_router,      dependencies=[Depends(require_api_key)])
+    app.include_router(signals_router,     dependencies=[Depends(require_api_key)])
+    app.include_router(backtest_router,    dependencies=[Depends(require_api_key)])
+    app.include_router(rank_router,        dependencies=[Depends(require_api_key)])
+    app.include_router(replay_router,      dependencies=[Depends(require_api_key)])
+    app.include_router(validate_router,    dependencies=[Depends(require_api_key)])
+    app.include_router(incremental_router, dependencies=[Depends(require_api_key)])
+    app.include_router(integrity_router,   dependencies=[Depends(require_api_key)])
+    app.include_router(store_router)       # auth set on router
+    return app
